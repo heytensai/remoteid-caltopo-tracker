@@ -191,3 +191,10 @@ See [LICENSE](LICENSE) for details.
 
 - [scapy-uas-remoteid](https://github.com/aeburriel/scapy-uas-remoteid/) - Remote ID packet decoding library
 - [CalTopo](https://caltopo.com/) - Mapping platform for search and rescue
+
+## Other projects of a similar ilk
+
+These are some other RemoteID projects which I was unable to use for various reasons but which might be relevant for some.
+
+- https://github.com/iannil/open-remote-id-parser/
+- https://github.com/dronetag/python-odid/
