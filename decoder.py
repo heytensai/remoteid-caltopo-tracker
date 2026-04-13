@@ -45,7 +45,7 @@ class UAS:
             return False
         if self.lat is None:
             return False
-        if self.lat is None:
+        if self.lon is None:
             return False
         return True
 
