@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class server_config:
     rate_limit: int
-    ignore_list: list[str]
+    ignore_list: set[str]
     caltopo_url: str
     logging: str
     logging_level: int
@@ -32,9 +32,7 @@ class server_config:
 
         self.caltopo_url = yaml_data["caltopo_url"]
         self.rate_limit = int(yaml_data["rate_limit"])
-        self.ignore_list = {}
-        for i in yaml_data["ignore"]:
-            self.ignore_list[i] = True
+        self.ignore_list = set(yaml_data.get("ignore", []))
 
 @dataclass
 class UAS:
