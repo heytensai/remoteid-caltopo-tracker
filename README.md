@@ -22,7 +22,7 @@ This project heavily depends on [scapy-uas-remoteid](https://github.com/aeburrie
 
 ### Requirements
 
-- Python 3.8+
+- Python 3.12+
 - Linux system with WiFi interface supporting monitor mode
 - Root/sudo privileges (required for monitor mode and packet capture)
 
