@@ -1,19 +1,27 @@
-import yaml
+""" Read UAS Remote ID packets from a network interface or a PCAP file and
+    relay them to a CalTopo map
+"""
+
+import argparse
+from dataclasses import dataclass
 import time
 import logging
+
+import yaml
 import requests
-from uas_remoteid.common.wifi import parse_dot11
+from requests.exceptions import RequestException
 from scapy.layers.dot11 import Dot11
 from scapy.all import rdpcap, sniff
-import sys
-from pprint import pprint
-from dataclasses import dataclass
-import argparse
+
+from uas_remoteid.common.wifi import parse_dot11
 
 logger = logging.getLogger(__name__)
 
 @dataclass
 class ServerConfig:
+    """ Read configuration from a YAML file
+    """
+
     rate_limit: int
     ignore_list: set[str]
     caltopo_url: str
@@ -21,7 +29,7 @@ class ServerConfig:
     logging_level: int
 
     def __init__(self, yaml_file: str):
-        with open(yaml_file, "r") as fh:
+        with open(yaml_file, encoding="utf-8") as fh:
             yaml_data = yaml.safe_load(fh)
 
         self.logging = yaml_data["logging"]
@@ -36,11 +44,18 @@ class ServerConfig:
 
 @dataclass
 class UAS:
+    """ Data received from a Remote ID packet
+    """
+
     id: str = None
     lat: str = None
     lon: str = None
 
     def valid(self) -> bool:
+        """ Check whether all fields have been populated. This is necessary
+            because data is spread across multiple Remote ID packets, so won't
+            all be received at the same time.
+        """
         if self.id is None:
             return False
         if self.lat is None:
@@ -51,37 +66,45 @@ class UAS:
 
 @dataclass
 class Server:
+    """ Handles UAS Remote ID packet processing and CalTopo reporting.
+    """
+
     url_prefix: str
     last_update: int
     config: ServerConfig
 
     def report(self, uas):
+        """ Upload data to CalTopo
+        """
+
         current_time = time.time()
         delta = current_time - self.last_update
         if delta < self.config.rate_limit:
-            logger.info(f"RL {uas.id}")
+            logger.info("RL %s", uas.id)
             return
 
         self.last_update = current_time
-        logger.info(f"TX {uas.id} {uas.lon} {uas.lat}")
+        logger.info("TX %s %s %s", uas.id, uas.lon, uas.lat)
         url = f"{self.url_prefix}?id={uas.id}&lat={uas.lat}&lng={uas.lon}"
         try:
-            resp = requests.get(url)
-        except Exception as e:
-            logger.error(f"ER {e}")
-            pass
+            resp = requests.get(url, timeout=10)
+            logger.debug("RP %s %.100s", resp.status_code, resp.text)
+        except RequestException as e:
+            logger.error("NT: %s", e)
 
     def on_receive(self, packet):
+        """ Event handler for sniffed packets
+        """
+
         if not packet.haslayer(Dot11):
             return
-        dot11 = packet[Dot11]
 
         uas = self.decode_packet(packet)
 
         if not uas.valid():
             return
 
-        logger.info(f"RX {uas.id} {uas.lon} {uas.lat}")
+        logger.info("RX %s %s %s", uas.id, uas.lon, uas.lat)
 
         if uas.id in self.config.ignore_list:
             return
@@ -89,14 +112,15 @@ class Server:
         self.report(uas)
 
     def decode_packet(self, packet: Dot11) -> UAS:
+        """ Read the important bits from the Remote ID beacon and put them
+            in a UAS object
+        """
+
         uas = UAS()
         for msg in parse_dot11(packet):
-            #pprint(msg)
-            #print(msg.messageType)
             for d in msg.data:
-                #print(d.messageType)
                 if d.messageType == 0:
-                    uas.id = d.uasId.decode("utf-8") 
+                    uas.id = d.uasId.decode("utf-8")
                 if d.messageType == 1:
                     uas.lat = d.latitude
                     uas.lon = d.longitude
@@ -106,7 +130,8 @@ class Server:
         self.config = ServerConfig(yaml_file)
         self.url_prefix = self.config.caltopo_url
         self.last_update = time.time() - self.config.rate_limit
-        logging.basicConfig(level=self.config.logging_level, format="{asctime} - {levelname} - {message}", style="{")
+        logging.basicConfig(level=self.config.logging_level,
+            format="{asctime} - {levelname} - {message}", style="{")
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
@@ -119,8 +144,8 @@ if __name__ == "__main__":
     serv = Server(args.config)
 
     if args.pcap:
-        for packet in rdpcap(args.pcap):
-            serv.on_receive(packet)
+        for p in rdpcap(args.pcap):
+            serv.on_receive(p)
 
     elif args.interface:
         try:
