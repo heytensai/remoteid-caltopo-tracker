@@ -13,7 +13,7 @@ import argparse
 logger = logging.getLogger(__name__)
 
 @dataclass
-class server_config:
+class ServerConfig:
     rate_limit: int
     ignore_list: set[str]
     caltopo_url: str
@@ -50,10 +50,10 @@ class UAS:
         return True
 
 @dataclass
-class server:
+class Server:
     url_prefix: str
     last_update: int
-    config: server_config
+    config: ServerConfig
 
     def report(self, uas):
         current_time = time.time()
@@ -103,7 +103,7 @@ class server:
         return uas
 
     def __init__(self, yaml_file: str):
-        self.config = server_config(yaml_file)
+        self.config = ServerConfig(yaml_file)
         self.url_prefix = self.config.caltopo_url
         self.last_update = time.time() - self.config.rate_limit
         logging.basicConfig(level=self.config.logging_level, format="{asctime} - {levelname} - {message}", style="{")
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     _ = argparser.add_argument("--config", required=True, help="")
     args = argparser.parse_args()
 
-    serv = server(args.config)
+    serv = Server(args.config)
 
     if args.pcap:
         for packet in rdpcap(args.pcap):
