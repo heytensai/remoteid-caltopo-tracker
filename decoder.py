@@ -1,19 +1,22 @@
-import yaml
+import argparse
+from dataclasses import dataclass
 import time
 import logging
+
+import yaml
 import requests
-from uas_remoteid.common.wifi import parse_dot11
 from scapy.layers.dot11 import Dot11
 from scapy.all import rdpcap, sniff
-import sys
-from pprint import pprint
-from dataclasses import dataclass
-import argparse
+
+from uas_remoteid.common.wifi import parse_dot11
 
 logger = logging.getLogger(__name__)
 
 @dataclass
 class ServerConfig:
+    """ Read configuration from a YAML file
+    """
+
     rate_limit: int
     ignore_list: set[str]
     caltopo_url: str
@@ -36,6 +39,9 @@ class ServerConfig:
 
 @dataclass
 class UAS:
+    """ Data received from a Remote ID packet
+    """
+
     id: str = None
     lat: str = None
     lon: str = None
@@ -51,6 +57,9 @@ class UAS:
 
 @dataclass
 class Server:
+    """ Handles UAS Remote ID packet processing and CalTopo reporting.
+    """
+
     url_prefix: str
     last_update: int
     config: ServerConfig
@@ -69,12 +78,10 @@ class Server:
             resp = requests.get(url)
         except Exception as e:
             logger.error(f"ER {e}")
-            pass
 
     def on_receive(self, packet):
         if not packet.haslayer(Dot11):
             return
-        dot11 = packet[Dot11]
 
         uas = self.decode_packet(packet)
 
@@ -91,12 +98,9 @@ class Server:
     def decode_packet(self, packet: Dot11) -> UAS:
         uas = UAS()
         for msg in parse_dot11(packet):
-            #pprint(msg)
-            #print(msg.messageType)
             for d in msg.data:
-                #print(d.messageType)
                 if d.messageType == 0:
-                    uas.id = d.uasId.decode("utf-8") 
+                    uas.id = d.uasId.decode("utf-8")
                 if d.messageType == 1:
                     uas.lat = d.latitude
                     uas.lon = d.longitude
@@ -106,7 +110,8 @@ class Server:
         self.config = ServerConfig(yaml_file)
         self.url_prefix = self.config.caltopo_url
         self.last_update = time.time() - self.config.rate_limit
-        logging.basicConfig(level=self.config.logging_level, format="{asctime} - {levelname} - {message}", style="{")
+        logging.basicConfig(level=self.config.logging_level,
+            format="{asctime} - {levelname} - {message}", style="{")
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
