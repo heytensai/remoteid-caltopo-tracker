@@ -1,3 +1,7 @@
+""" Read UAS Remote ID packets from a network interface or a PCAP file and
+    relay them to a CalTopo map
+"""
+
 import argparse
 from dataclasses import dataclass
 import time
@@ -76,17 +80,17 @@ class Server:
         current_time = time.time()
         delta = current_time - self.last_update
         if delta < self.config.rate_limit:
-            logger.info(f"RL {uas.id}")
+            logger.info("RL %s", uas.id)
             return
 
         self.last_update = current_time
-        logger.info(f"TX {uas.id} {uas.lon} {uas.lat}")
+        logger.info("TX %s %s %s", uas.id, uas.lon, uas.lat)
         url = f"{self.url_prefix}?id={uas.id}&lat={uas.lat}&lng={uas.lon}"
         try:
             resp = requests.get(url, timeout=10)
-            logger.debug(f"RP {resp.status_code} {resp.text[:100]}")
+            logger.debug("RP %s %.100s", resp.status_code, resp.text)
         except RequestException as e:
-            logger.error(f"NT: {e}")
+            logger.error("NT: %s", e)
 
     def on_receive(self, packet):
         """ Event handler for sniffed packets
@@ -100,7 +104,7 @@ class Server:
         if not uas.valid():
             return
 
-        logger.info(f"RX {uas.id} {uas.lon} {uas.lat}")
+        logger.info("RX %s %s %s", uas.id, uas.lon, uas.lat)
 
         if uas.id in self.config.ignore_list:
             return
