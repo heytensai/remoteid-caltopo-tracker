@@ -5,6 +5,7 @@ import logging
 
 import yaml
 import requests
+from requests.exceptions import RequestException
 from scapy.layers.dot11 import Dot11
 from scapy.all import rdpcap, sniff
 
@@ -24,7 +25,7 @@ class ServerConfig:
     logging_level: int
 
     def __init__(self, yaml_file: str):
-        with open(yaml_file, "r") as fh:
+        with open(yaml_file, encoding="utf-8") as fh:
             yaml_data = yaml.safe_load(fh)
 
         self.logging = yaml_data["logging"]
@@ -47,6 +48,10 @@ class UAS:
     lon: str = None
 
     def valid(self) -> bool:
+        """ Check whether all fields have been populated. This is necessary
+            because data is spread across multiple Remote ID packets, so won't
+            all be received at the same time.
+        """
         if self.id is None:
             return False
         if self.lat is None:
@@ -65,6 +70,9 @@ class Server:
     config: ServerConfig
 
     def report(self, uas):
+        """ Upload data to CalTopo
+        """
+
         current_time = time.time()
         delta = current_time - self.last_update
         if delta < self.config.rate_limit:
@@ -75,11 +83,15 @@ class Server:
         logger.info(f"TX {uas.id} {uas.lon} {uas.lat}")
         url = f"{self.url_prefix}?id={uas.id}&lat={uas.lat}&lng={uas.lon}"
         try:
-            resp = requests.get(url)
-        except Exception as e:
-            logger.error(f"ER {e}")
+            resp = requests.get(url, timeout=10)
+            logger.debug(f"RP {resp.status_code} {resp.text[:100]}")
+        except RequestException as e:
+            logger.error(f"NT: {e}")
 
     def on_receive(self, packet):
+        """ Event handler for sniffed packets
+        """
+
         if not packet.haslayer(Dot11):
             return
 
@@ -96,6 +108,10 @@ class Server:
         self.report(uas)
 
     def decode_packet(self, packet: Dot11) -> UAS:
+        """ Read the important bits from the Remote ID beacon and put them
+            in a UAS object
+        """
+
         uas = UAS()
         for msg in parse_dot11(packet):
             for d in msg.data:
@@ -124,8 +140,8 @@ if __name__ == "__main__":
     serv = Server(args.config)
 
     if args.pcap:
-        for packet in rdpcap(args.pcap):
-            serv.on_receive(packet)
+        for p in rdpcap(args.pcap):
+            serv.on_receive(p)
 
     elif args.interface:
         try:
