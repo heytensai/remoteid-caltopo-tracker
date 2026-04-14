@@ -108,15 +108,6 @@ class server:
         self.last_update = time.time() - self.config.rate_limit
         logging.basicConfig(level=self.config.logging_level, format="{asctime} - {levelname} - {message}", style="{")
 
-def sniffer_packet(packet):
-    if not packet.haslayer(Dot11):
-        return
-    dot11 = packet[Dot11]
-
-    uas = decode_packet(dot11)
-    if uas.valid():
-        print(f"{uas.id} {uas.lat} {uas.lon}")
-
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     group = argparser.add_mutually_exclusive_group(required=True)
