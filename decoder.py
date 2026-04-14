@@ -136,9 +136,9 @@ class Server:
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     group = argparser.add_mutually_exclusive_group(required=True)
-    _ = group.add_argument("--pcap", help="")
-    _ = group.add_argument("--interface", help="")
-    _ = argparser.add_argument("--config", required=True, help="")
+    _ = group.add_argument("--pcap", help="pcap file to read packets from")
+    _ = group.add_argument("--interface", help="name of wireless interface to sniff from")
+    _ = argparser.add_argument("--config", required=True, help="yaml configuration file")
     args = argparser.parse_args()
 
     serv = Server(args.config)
