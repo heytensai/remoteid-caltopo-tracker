@@ -92,6 +92,7 @@ class Server:
     url_prefix: str
     last_update: int
     config: ServerConfig
+    noop: bool = False
 
     def report(self, uas):
         """ Upload data to CalTopo
@@ -104,7 +105,12 @@ class Server:
             return
 
         self.last_update = current_time
+
+        if self.noop:
+            logger.info("TX %s %s %s (NOOP)", uas.id, uas.lon, uas.lat)
+            return
         logger.info("TX %s %s %s", uas.id, uas.lon, uas.lat)
+
         url = f"{self.url_prefix}?id={uas.id}&lat={uas.lat}&lng={uas.lon}"
         try:
             resp = requests.get(url, timeout=10)
@@ -149,10 +155,11 @@ class Server:
                     uas.lon = d.longitude
         return uas
 
-    def __init__(self, yaml_file: str):
+    def __init__(self, yaml_file: str, noop: bool = False):
         self.config = ServerConfig(yaml_file)
         self.url_prefix = self.config.caltopo_url
         self.last_update = time.time() - self.config.rate_limit
+        self.noop = noop
         logging.basicConfig(level=self.config.logging_level,
             format="{asctime} - {levelname} - {message}", style="{")
 
@@ -162,9 +169,10 @@ if __name__ == "__main__":
     _ = group.add_argument("--pcap", help="pcap file to read packets from")
     _ = group.add_argument("--interface", help="name of wireless interface to sniff from")
     _ = argparser.add_argument("--config", required=True, help="yaml configuration file")
+    _ = argparser.add_argument("--noop", action="store_true", help="do not send data to CalTopo (no operation mode)")
     args = argparser.parse_args()
 
-    serv = Server(args.config)
+    serv = Server(args.config, noop=args.noop)
 
     if args.pcap:
         for p in rdpcap(args.pcap):
