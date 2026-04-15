@@ -27,6 +27,7 @@ class ServerConfig:
     caltopo_url: str
     logging: str
     logging_level: int
+    bpf_filter: str
 
     def __init__(self, yaml_file: str):
         with open(yaml_file, encoding="utf-8") as fh:
@@ -41,6 +42,10 @@ class ServerConfig:
         self.caltopo_url = yaml_data["caltopo_url"]
         self.rate_limit = int(yaml_data["rate_limit"])
         self.ignore_list = set(yaml_data.get("ignore", []))
+        if filter in yaml_data:
+            self.bpf_filter = yaml_data["filter"]
+        else:
+            self.bpf_filter = ""
 
 @dataclass
 class UAS:
@@ -149,8 +154,8 @@ class Server:
                     uas.lon = d.longitude
         return uas
 
-    def __init__(self, yaml_file: str):
-        self.config = ServerConfig(yaml_file)
+    def __init__(self, config: ServerConfig):
+        self.config = config
         self.url_prefix = self.config.caltopo_url
         self.last_update = time.time() - self.config.rate_limit
         logging.basicConfig(level=self.config.logging_level,
@@ -164,7 +169,8 @@ if __name__ == "__main__":
     _ = argparser.add_argument("--config", required=True, help="yaml configuration file")
     args = argparser.parse_args()
 
-    serv = Server(args.config)
+    conf = ServerConfig(args.config)
+    serv = Server(conf)
 
     if args.pcap:
         for p in rdpcap(args.pcap):
@@ -172,6 +178,6 @@ if __name__ == "__main__":
 
     elif args.interface:
         try:
-            sniff(iface=args.interface, prn=serv.on_receive, store=0)
+            sniff(iface=args.interface, filter=conf.bpf_filter, prn=serv.on_receive, store=0)
         except KeyboardInterrupt:
             pass
