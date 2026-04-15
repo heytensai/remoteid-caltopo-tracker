@@ -64,6 +64,26 @@ class UAS:
             return False
         return True
 
+    def url_safe(self) -> bool:
+        """ Validate that id, lat, and lon are safe for use in a URL.
+            - id: must be alphanumeric
+            - lat, lon: must be strictly numeric (including negative sign and decimal)
+        """
+        if not self.id or not self.id.isalnum():
+            logger.warning("Invalid UAS ID: %s", self.id)
+            return False
+        try:
+            float(self.lat)
+        except (TypeError, ValueError):
+            logger.warning("Invalid latitude: %s", self.lat)
+            return False
+        try:
+            float(self.lon)
+        except (TypeError, ValueError):
+            logger.warning("Invalid longitude: %s", self.lon)
+            return False
+        return True
+
 @dataclass
 class Server:
     """ Handles UAS Remote ID packet processing and CalTopo reporting.
@@ -107,6 +127,9 @@ class Server:
         logger.info("RX %s %s %s", uas.id, uas.lon, uas.lat)
 
         if uas.id in self.config.ignore_list:
+            return
+
+        if not uas.url_safe():
             return
 
         self.report(uas)
