@@ -35,6 +35,10 @@ class ServerConfig:
         self.logging = yaml_data["logging"]
         if self.logging == "INFO":
             self.logging_level = logging.INFO
+        elif self.logging == "ERROR":
+            self.logging_level = logging.ERROR
+        elif self.logging == "DEBUG":
+            self.logging_level = logging.DEBUG
         else:
             self.logging_level = logging.WARNING
 
@@ -101,7 +105,7 @@ class Server:
         current_time = time.time()
         delta = current_time - self.last_update
         if delta < self.config.rate_limit:
-            logger.info("RL %s", uas.id)
+            logger.debug("Rate limited %s", uas.id)
             return
 
         self.last_update = current_time
@@ -114,9 +118,9 @@ class Server:
         url = f"{self.url_prefix}?id={uas.id}&lat={uas.lat}&lng={uas.lon}"
         try:
             resp = requests.get(url, timeout=10)
-            logger.debug("RP %s %.100s", resp.status_code, resp.text)
+            logger.debug("CalTopo %s %.100s", resp.status_code, resp.text)
         except RequestException as e:
-            logger.error("NT: %s", e)
+            logger.error("Exception %s", e)
 
     def on_receive(self, packet):
         """ Event handler for sniffed packets
@@ -181,6 +185,7 @@ if __name__ == "__main__":
 
     elif args.interface:
         try:
+            logger.info("Listening for packets %s", args.interface)
             sniff(iface=args.interface, prn=serv.on_receive, store=0)
         except KeyboardInterrupt:
             pass

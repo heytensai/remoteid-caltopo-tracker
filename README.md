@@ -62,7 +62,7 @@ Edit `config.yaml` to configure the application:
 # Minimum seconds between updates for the same drone (prevents API spam)
 rate_limit: 5
 
-# Logging level: INFO or WARNING
+# Logging level: DEBUG, INFO, WARNING, ERROR
 logging: 'INFO'
 
 # Your CalTopo position report URL
@@ -163,12 +163,12 @@ options:
 
 ## Logging
 
-The application outputs log messages in the following format:
+The application outputs log messages such as:
 
 - `RX <id> <lon> <lat>` - Received a valid Remote ID packet
 - `TX <id> <lon> <lat>` - Sent position update to CalTopo
-- `RL <id>` - Rate limited (update skipped)
-- `ER <error>` - Error occurred during transmission
+- `Invalid UAD ID` - UAS ID that has invalid characters
+- `Invalid latitutde` - Latitude has non-numeric value
 
 ## Troubleshooting
 
