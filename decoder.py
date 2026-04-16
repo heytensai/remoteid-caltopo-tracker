@@ -161,7 +161,7 @@ class Server:
         return uas
 
     def __init__(self, config: ServerConfig, noop: bool = False):
-        self.config = ServerConfig(yaml_file)
+        self.config = config
         self.url_prefix = self.config.caltopo_url
         self.last_update = time.time() - self.config.rate_limit
         self.noop = noop
