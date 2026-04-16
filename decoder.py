@@ -134,7 +134,7 @@ class Server:
         if not uas.valid():
             return
 
-        logger.info("RX %s %s %s", uas.id, uas.lon, uas.lat)
+        logger.debug("RX %s %s %s", uas.id, uas.lon, uas.lat)
 
         if uas.id in self.config.ignore_list:
             return
