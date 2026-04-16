@@ -12,7 +12,7 @@ Group=root
 WorkingDirectory=/opt/remoteid-caltopo-tracker
 
 # Use the Python interpreter from the virtualenv directly
-ExecStart=/opt/remoteid-caltopo-tracker/env/bin/python /opt/remoteid-caltopo-tracker/decoder.py
+ExecStart=/opt/remoteid-caltopo-tracker/env/bin/python /opt/remoteid-caltopo-tracker/decoder.py --config config.yaml --interface wifi0
 
 # Restart policy
 Restart=always
