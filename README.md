@@ -84,6 +84,18 @@ ignore:
 
 Remote ID broadcasts can arrive multiple times per second, often with identical location data. The `rate_limit` setting prevents spamming the CalTopo API by only sending updates at the specified interval (in seconds). **It is strongly recommended to keep this enabled.**
 
+## Running as a service
+
+1. As root, install in a directory of your choice, such as /opt/remoteid-caltopo-tracker. Create the virtual environment.
+2. Copy the service file to /etc/systemd/service
+3. Activate the service
+
+```bash
+systemctl daemon-reload
+systemctl enable remoteid-caltopo-tracker.service
+systemctl start remoteid-caltopo-tracker.service
+```
+
 ## Usage
 
 ### Enable WiFi Monitor Mode
