@@ -145,22 +145,6 @@ options:
   --config CONFIG       Path to configuration YAML file
 ```
 
-## Project Structure
-
-```
-.
-├── decoder.py           # Main application script
-├── config.yaml          # Your configuration (created from default)
-├── default_config.yaml  # Example configuration template
-├── requirements.txt     # Python dependencies
-├── uas_remoteid/        # Remote ID packet decoder library
-│   ├── common/
-│   ├── dji/
-│   ├── opendroneid/
-│   └── sgdsn/
-└── README.md           # This file
-```
-
 ## Logging
 
 The application outputs log messages such as:
