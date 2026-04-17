@@ -6,6 +6,8 @@ import argparse
 from dataclasses import dataclass
 import time
 import logging
+import signal
+import sys
 
 import yaml
 import requests
@@ -173,7 +175,17 @@ class Server:
         logging.basicConfig(level=self.config.logging_level,
             format="{asctime} - {levelname} - {message}", style="{")
 
+
+def signal_handler():
+    """ Catch system signals
+    """
+    logger.info("Shutting down...")
+    sys.exit(0)
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
     argparser = argparse.ArgumentParser()
     group = argparser.add_mutually_exclusive_group(required=True)
     _ = group.add_argument("--pcap", help="pcap file to read packets from")
