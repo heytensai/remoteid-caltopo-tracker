@@ -99,7 +99,7 @@ class Server:
     """
 
     url_prefix: str
-    last_update: int
+    last_update: dict[str, float]
     config: ServerConfig
     noop: bool = False
 
@@ -108,12 +108,13 @@ class Server:
         """
 
         current_time = time.time()
-        delta = current_time - self.last_update
+        last_update = self.last_update.get(uas.id, 0)
+        delta = current_time - last_update
         if delta < self.config.rate_limit:
             logger.debug("Rate limited %s", uas.id)
             return
 
-        self.last_update = current_time
+        self.last_update[uas.id] = current_time
 
         if self.noop:
             logger.info("TX %s %s %s (NOOP)", uas.id, uas.lon, uas.lat)
@@ -167,7 +168,7 @@ class Server:
     def __init__(self, config: ServerConfig, noop: bool = False):
         self.config = config
         self.url_prefix = self.config.caltopo_url
-        self.last_update = time.time() - self.config.rate_limit
+        self.last_update = {}
         self.noop = noop
         logging.basicConfig(level=self.config.logging_level,
             format="{asctime} - {levelname} - {message}", style="{")
