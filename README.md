@@ -62,7 +62,7 @@ Edit `config.yaml` to configure the application:
 # Minimum seconds between updates for the same drone (prevents API spam)
 rate_limit: 5
 
-# Logging level: INFO or WARNING
+# Logging level: DEBUG, INFO, WARNING, ERROR
 logging: 'INFO'
 
 # Your CalTopo position report URL
@@ -83,6 +83,18 @@ ignore:
 ### Rate Limiting
 
 Remote ID broadcasts can arrive multiple times per second, often with identical location data. The `rate_limit` setting prevents spamming the CalTopo API by only sending updates at the specified interval (in seconds). **It is strongly recommended to keep this enabled.**
+
+## Running as a service
+
+1. As root, install in a directory of your choice, such as /opt/remoteid-caltopo-tracker. Create the virtual environment.
+2. Copy the service file to /etc/systemd/service
+3. Activate the service
+
+```bash
+systemctl daemon-reload
+systemctl enable remoteid-caltopo-tracker.service
+systemctl start remoteid-caltopo-tracker.service
+```
 
 ## Usage
 
@@ -151,12 +163,12 @@ options:
 
 ## Logging
 
-The application outputs log messages in the following format:
+The application outputs log messages such as:
 
 - `RX <id> <lon> <lat>` - Received a valid Remote ID packet
 - `TX <id> <lon> <lat>` - Sent position update to CalTopo
-- `RL <id>` - Rate limited (update skipped)
-- `ER <error>` - Error occurred during transmission
+- `Invalid UAD ID` - UAS ID that has invalid characters
+- `Invalid latitutde` - Latitude has non-numeric value
 
 ## Troubleshooting
 
