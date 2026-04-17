@@ -190,7 +190,7 @@ if __name__ == "__main__":
     group = argparser.add_mutually_exclusive_group(required=True)
     _ = group.add_argument("--pcap", help="pcap file to read packets from")
     _ = group.add_argument("--interface", help="name of wireless interface to sniff from")
-    _ = argparser.add_argument("--config", required=True, help="yaml configuration file")
+    _ = argparser.add_argument("--config", default="config.yaml", help="yaml configuration file")
     _ = argparser.add_argument("--noop", action="store_true",
         help="do not send data to CalTopo (no operation mode)")
     args = argparser.parse_args()
