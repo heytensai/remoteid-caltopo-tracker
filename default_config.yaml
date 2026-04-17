@@ -1,5 +1,6 @@
 rate_limit: 5
 logging: 'INFO'
 caltopo_url: 'https://caltopo.com/api/v1/position/report/<your_key_here>'
+filter: "type mgt subtype action"
 ignore:
   - "<your_uas_id_here>"
