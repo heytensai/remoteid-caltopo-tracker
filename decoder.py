@@ -39,9 +39,9 @@ class ServerConfig:
             yaml_data = yaml.safe_load(fh)
 
         required_fields = ["caltopo_url"]
-        for field in required_fields:
-            if field not in yaml_data:
-                raise ValueError(f"Missing required config field: {field}")
+        for r_field in required_fields:
+            if r_field not in yaml_data:
+                raise ValueError(f"Missing required config field: {r_field}")
 
         self.logging = yaml_data["logging"]
         if self.logging == "INFO":
