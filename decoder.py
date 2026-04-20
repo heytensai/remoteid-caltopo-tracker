@@ -51,7 +51,7 @@ class ServerConfig:
         self.database = yaml_data.get("database")
 
 @dataclass
-class UAS:
+class UAS:  # pylint: disable=too-many-instance-attributes
     """ Data received from a Remote ID packet
     """
 

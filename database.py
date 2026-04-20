@@ -57,6 +57,8 @@ class RemoteIDDatabase:
             conn.commit()
         logger.debug("Database initialized at %s", self.db_path)
 
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
     def store(self, timestamp: datetime, mac_address: str, uas_id: str,
               latitude: float, longitude: float, altitude: float,
               operator_id: str = None, operator_latitude: float = None,
@@ -81,4 +83,3 @@ class RemoteIDDatabase:
     def close(self):
         """ Close database connections (no-op for sqlite3 context manager pattern)
         """
-        pass
