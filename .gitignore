@@ -3,3 +3,4 @@ env
 config.yaml
 *.pyc
 __pycache__
+*.db
