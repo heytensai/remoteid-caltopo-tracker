@@ -118,6 +118,26 @@ sqlite3 remoteid.db "SELECT * FROM remoteidWHERE uas_id='YOURDRONEID';"
 sqlite3 remoteid.db ".mode csv" ".output drones.csv" "SELECT * FROM remoteid;"
 ```
 
+### Export to GPX
+
+The included `export_to_gpx.py` script allows you to export stored Remote ID data to GPX track files for use in mapping applications:
+
+```bash
+# Export all records for a specific date
+python export_to_gpx.py remoteid.db -o output.gpx --date 2026-04-19
+
+# Export records for a specific drone
+python export_to_gpx.py remoteid.db -o output.gpx --uas-id YOURDRONEID
+
+# Export with date range
+python export_to_gpx.py remoteid.db -o output.gpx --start-date 2026-04-01 --end-date 2026-04-19
+
+# Combine filters (UAS ID + date)
+python export_to_gpx.py remoteid.db -o output.gpx --uas-id YOURDRONEID --date 2026-04-19
+```
+
+The script creates one track per UAS ID, named with the UAS ID, making it easy to distinguish between multiple drones in your mapping application.
+
 ### Getting a CalTopo URL
 
 1. Create or open a map in CalTopo
