@@ -13,6 +13,7 @@ Remote ID is a broadcast system that transmits identification and location infor
 - **Live Packet Capture**: Capture Remote ID broadcasts from a WiFi interface in monitor mode
 - **PCAP Replay**: Replay and analyze previously captured Remote ID packets from PCAP files
 - **CalTopo Integration**: Send position updates directly to CalTopo maps
+- **SQLite Database Storage**: Optionally store all Remote ID data locally for analysis and record-keeping
 - **Ignore List**: Filter out specific UAS IDs from reporting
 - **Rate Limiting**: Configurable throttling to prevent API spam
 
@@ -33,6 +34,8 @@ scapy==2.5.0
 pyyaml
 requests
 ```
+
+Note: SQLite support is built into Python (standard library) and requires no additional packages.
 
 ## Installation
 
@@ -71,6 +74,48 @@ caltopo_url: 'https://caltopo.com/api/v1/position/report/<your_key_here>'
 # List of UAS IDs to ignore (e.g., your own drones)
 ignore:
   - "<your_uas_id_here>"
+
+# Optional: SQLite database path for storing Remote ID data
+# If not specified, no database will be used
+database: '/path/to/remoteid.db'
+```
+
+### Database Storage
+
+The application can optionally store all received Remote ID data to a SQLite database. This is useful for:
+- Post-mission analysis and review
+- Historical flight tracking
+- Compliance and record-keeping
+- Debugging and troubleshooting
+
+To enable database storage, add the `database` option to your `config.yaml` with the path to your database file. The database and table will be created automatically if they don't exist.
+
+**Database Schema:**
+
+| Column             | Type     | Description                                |
+|--------------------|----------|--------------------------------------------|
+| id                 | INTEGER  | Auto-incrementing primary key              |
+| timestamp          | DATETIME | When the packet was received               |
+| mac_address        | TEXT     | Source MAC address from WiFi packet        |
+| uas_id             | TEXT     | UAS (drone) identification string          |
+| latitude           | REAL     | Latitude in decimal degrees                |
+| longitude          | REAL     | Longitude in decimal degrees               |
+| altitude           | REAL     | Altitude in meters (geo or barometric)     |
+| operator_id        | TEXT     | Operator registration ID                   |
+| operator_latitude  | REAL     | Operator (pilot) latitude                  |
+| operator_longitude | REAL     | Operator (pilot) longitude                 |
+
+**Querying the database:**
+
+```bash
+# View all records
+sqlite3 remoteid.db "SELECT * FROM remoteid;"
+
+# View records for a specific drone
+sqlite3 remoteid.db "SELECT * FROM remoteidWHERE uas_id='YOURDRONEID';"
+
+# Export to CSV
+sqlite3 remoteid.db ".mode csv" ".output drones.csv" "SELECT * FROM remoteid;"
 ```
 
 ### Getting a CalTopo URL

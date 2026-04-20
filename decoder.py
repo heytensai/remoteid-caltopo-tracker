@@ -3,7 +3,8 @@
 """
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 import time
 import logging
 
@@ -14,6 +15,7 @@ from scapy.layers.dot11 import Dot11
 from scapy.all import rdpcap, sniff
 
 from uas_remoteid.common.wifi import parse_dot11
+from database import RemoteIDDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class ServerConfig:
     caltopo_url: str
     logging: str
     logging_level: int
+    database: str = None
 
     def __init__(self, yaml_file: str):
         with open(yaml_file, encoding="utf-8") as fh:
@@ -45,6 +48,7 @@ class ServerConfig:
         self.caltopo_url = yaml_data["caltopo_url"]
         self.rate_limit = int(yaml_data["rate_limit"])
         self.ignore_list = set(yaml_data.get("ignore", []))
+        self.database = yaml_data.get("database")
 
 @dataclass
 class UAS:
@@ -54,6 +58,12 @@ class UAS:
     id: str = None
     lat: str = None
     lon: str = None
+    mac_address: str = None
+    altitude: float = None
+    timestamp: datetime = field(default_factory=datetime.now)
+    operator_id: str = None
+    operator_lat: float = None
+    operator_lon: float = None
 
     def valid(self) -> bool:
         """ Check whether all fields have been populated. This is necessary
@@ -88,6 +98,13 @@ class UAS:
             return False
         return True
 
+    def get_altitude(self) -> float:
+        """ Get altitude as a float, returning 0 if None
+        """
+        if self.altitude is None:
+            return 0.0
+        return float(self.altitude)
+
 @dataclass
 class Server:
     """ Handles UAS Remote ID packet processing and CalTopo reporting.
@@ -97,9 +114,10 @@ class Server:
     last_update: int
     config: ServerConfig
     noop: bool = False
+    database: RemoteIDDatabase = None
 
     def report(self, uas):
-        """ Upload data to CalTopo
+        """ Upload data to CalTopo and store in database
         """
 
         current_time = time.time()
@@ -109,6 +127,20 @@ class Server:
             return
 
         self.last_update = current_time
+
+        # Store in database if configured
+        if self.database:
+            self.database.store(
+                timestamp=uas.timestamp,
+                mac_address=uas.mac_address or "",
+                uas_id=uas.id,
+                latitude=float(uas.lat),
+                longitude=float(uas.lon),
+                altitude=uas.get_altitude(),
+                operator_id=uas.operator_id,
+                operator_latitude=float(uas.operator_lat) if uas.operator_lat is not None else None,
+                operator_longitude=float(uas.operator_lon) if uas.operator_lon is not None else None
+            )
 
         if self.noop:
             logger.info("TX %s %s %s (NOOP)", uas.id, uas.lon, uas.lat)
@@ -150,6 +182,7 @@ class Server:
         """
 
         uas = UAS()
+        uas.mac_address = packet.addr2 if hasattr(packet, 'addr2') else None
         for msg in parse_dot11(packet):
             for d in msg.data:
                 if d.messageType == 0:
@@ -157,6 +190,16 @@ class Server:
                 if d.messageType == 1:
                     uas.lat = d.latitude
                     uas.lon = d.longitude
+                    # Try to get altitude - prefer geometric altitude if available
+                    if hasattr(d, 'altitudeGeo'):
+                        uas.altitude = d.altitudeGeo
+                    elif hasattr(d, 'altitudeBaro'):
+                        uas.altitude = d.altitudeBaro
+                if d.messageType == 4:
+                    uas.operator_lat = d.operatorLatitude
+                    uas.operator_lon = d.operatorLongitude
+                if d.messageType == 5:
+                    uas.operator_id = d.operatorId.decode("utf-8").rstrip('\x00')
         return uas
 
     def __init__(self, yaml_file: str, noop: bool = False):
@@ -166,6 +209,10 @@ class Server:
         self.noop = noop
         logging.basicConfig(level=self.config.logging_level,
             format="{asctime} - {levelname} - {message}", style="{")
+
+        # Initialize database if configured
+        if self.config.database:
+            self.database = RemoteIDDatabase(self.config.database)
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
