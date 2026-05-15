@@ -227,7 +227,7 @@ class Server:
         if self.config.database:
             self.database = RemoteIDDatabase(self.config.database)
 
-def signal_handler():
+def signal_handler(signum, frame): # pylint: disable=unused-argument
     """ Catch system signals
     """
     logger.info("Shutting down...")
