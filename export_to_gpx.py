@@ -21,6 +21,67 @@ def prettify_xml(elem: Element) -> str:
     return reparsed.toprettyxml(indent="  ")
 
 
+def add_uas_points(uas_id, points, gpx): # pylint: disable=too-many-locals
+    """write GPX details for this UAS's points
+    """
+    trk = SubElement(gpx, 'trk')
+    trk_name = SubElement(trk, 'name')
+    trk_name.text = uas_id
+
+    trkseg = SubElement(trk, 'trkseg')
+
+    if len(points) > 0:
+        # Start waypoint
+        start_pt = points[0]
+        wpt_start = SubElement(gpx, 'wpt')
+        wpt_start.set('lat', str(start_pt['latitude']))
+        wpt_start.set('lon', str(start_pt['longitude']))
+        if start_pt['altitude'] is not None:
+            ele_start = SubElement(wpt_start, 'ele')
+            ele_start.text = str(start_pt['altitude'])
+        name_start = SubElement(wpt_start, 'name')
+        name_start.text = f"{uas_id} Start"
+
+        # Operator waypoint
+        if start_pt['operator_latitude'] != 0 and start_pt['operator_longitude'] != 0:
+            oper_start = SubElement(gpx, 'wpt')
+            oper_start.set('lat', str(start_pt['operator_latitude']))
+            oper_start.set('lon', str(start_pt['operator_longitude']))
+            oper_name_start = SubElement(oper_start, 'name')
+            oper_name_start.text = f"{uas_id} Operator"
+
+    if len(points) > 1:
+        # End waypoint
+        end_pt = points[-1]
+        wpt_end = SubElement(gpx, 'wpt')
+        wpt_end.set('lat', str(end_pt['latitude']))
+        wpt_end.set('lon', str(end_pt['longitude']))
+        if end_pt['altitude'] is not None:
+            ele_end = SubElement(wpt_end, 'ele')
+            ele_end.text = str(end_pt['altitude'])
+        name_end = SubElement(wpt_end, 'name')
+        name_end.text = f"{uas_id} End"
+
+        # track that connects all the points
+        # we can only create a track if at least 2 points exist
+        for point in points:
+            trkpt = SubElement(trkseg, 'trkpt')
+            trkpt.set('lat', str(point['latitude']))
+            trkpt.set('lon', str(point['longitude']))
+
+            if point['altitude'] is not None:
+                ele = SubElement(trkpt, 'ele')
+                ele.text = str(point['altitude'])
+
+            time_elem = SubElement(trkpt, 'time')
+            # Format timestamp as ISO 8601
+            ts = point['timestamp']
+            if isinstance(ts, str):
+                time_elem.text = ts
+            else:
+                time_elem.text = ts.isoformat()
+
+
 def create_gpx_track(points_by_uas: dict[str, list[dict]]) -> Element:
     """Create a GPX Element from a dictionary of track points grouped by UAS ID.
 
@@ -46,54 +107,7 @@ def create_gpx_track(points_by_uas: dict[str, list[dict]]) -> Element:
 
     # Create one track per UAS ID
     for uas_id, points in points_by_uas.items():
-        trk = SubElement(gpx, 'trk')
-        trk_name = SubElement(trk, 'name')
-        trk_name.text = uas_id
-
-        trkseg = SubElement(trk, 'trkseg')
-
-        if len(points) > 0:
-            # Start waypoint
-            start_pt = points[0]
-            wpt_start = SubElement(gpx, 'wpt')
-            wpt_start.set('lat', str(start_pt['latitude']))
-            wpt_start.set('lon', str(start_pt['longitude']))
-            if start_pt['altitude'] is not None:
-                ele_start = SubElement(wpt_start, 'ele')
-                ele_start.text = str(start_pt['altitude'])
-            name_start = SubElement(wpt_start, 'name')
-            name_start.text = f"{uas_id} Start"
-
-        if len(points) > 1:
-            # End waypoint
-            end_pt = points[-1]
-            wpt_end = SubElement(gpx, 'wpt')
-            wpt_end.set('lat', str(end_pt['latitude']))
-            wpt_end.set('lon', str(end_pt['longitude']))
-            if end_pt['altitude'] is not None:
-                ele_end = SubElement(wpt_end, 'ele')
-                ele_end.text = str(end_pt['altitude'])
-            name_end = SubElement(wpt_end, 'name')
-            name_end.text = f"{uas_id} End"
-
-            # track that connects all the points
-            # we can only create a track if at least 2 points exist
-            for point in points:
-                trkpt = SubElement(trkseg, 'trkpt')
-                trkpt.set('lat', str(point['latitude']))
-                trkpt.set('lon', str(point['longitude']))
-
-                if point['altitude'] is not None:
-                    ele = SubElement(trkpt, 'ele')
-                    ele.text = str(point['altitude'])
-
-                time_elem = SubElement(trkpt, 'time')
-                # Format timestamp as ISO 8601
-                ts = point['timestamp']
-                if isinstance(ts, str):
-                    time_elem.text = ts
-                else:
-                    time_elem.text = ts.isoformat()
+        add_uas_points(uas_id, points, gpx)
 
     return gpx
 
@@ -148,6 +162,8 @@ def query_database(db_path: str, uas_id: str = None, start_date: str = None,
             'uas_id': row['uas_id'],
             'mac_address': row['mac_address'],
             'operator_id': row['operator_id'],
+            'operator_latitude': row['operator_latitude'],
+            'operator_longitude': row['operator_longitude'],
         })
 
     return points
