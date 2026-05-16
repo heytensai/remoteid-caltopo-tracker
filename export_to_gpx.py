@@ -169,12 +169,21 @@ def do_query(args, start_date: datetime, end_date: datetime):
             points_by_uas[uas_id].append(point)
 
         print(f"Found {len(points_by_uas)} unique UAS ID(s): {', '.join(points_by_uas.keys())}")
+        return points_by_uas
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except sqlite3.Error as e:
+        print(f"Database error: {e}", file=sys.stderr)
+        sys.exit(1)
 
+def write_gpx(points, output_file):
+    try:
         # Create GPX with one track per UAS ID
-        gpx = create_gpx_track(points_by_uas)
+        gpx = create_gpx_track(points)
 
         # Write output
-        output_path = Path(args.output)
+        output_path = Path(output_file)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         xml_content = prettify_xml(gpx)
@@ -185,9 +194,6 @@ def do_query(args, start_date: datetime, end_date: datetime):
 
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    except sqlite3.Error as e:
-        print(f"Database error: {e}", file=sys.stderr)
         sys.exit(1)
 
 def main():
@@ -232,7 +238,8 @@ def main():
     except ValueError as e:
         parser.error(str(e))
 
-    do_query(args, start_date, end_date)
+    points = do_query(args, start_date, end_date)
+    write_gpx(points, args.output)
 
 if __name__ == '__main__':
     main()
