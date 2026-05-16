@@ -52,22 +52,48 @@ def create_gpx_track(points_by_uas: dict[str, list[dict]]) -> Element:
 
         trkseg = SubElement(trk, 'trkseg')
 
-        for point in points:
-            trkpt = SubElement(trkseg, 'trkpt')
-            trkpt.set('lat', str(point['latitude']))
-            trkpt.set('lon', str(point['longitude']))
+        if len(points) > 0:
+            # Start waypoint
+            start_pt = points[0]
+            wpt_start = SubElement(gpx, 'wpt')
+            wpt_start.set('lat', str(start_pt['latitude']))
+            wpt_start.set('lon', str(start_pt['longitude']))
+            if start_pt['altitude'] is not None:
+                ele_start = SubElement(wpt_start, 'ele')
+                ele_start.text = str(start_pt['altitude'])
+            name_start = SubElement(wpt_start, 'name')
+            name_start.text = f"{uas_id} Start"
 
-            if point['altitude'] is not None:
-                ele = SubElement(trkpt, 'ele')
-                ele.text = str(point['altitude'])
+        if len(points) > 1:
+            # End waypoint
+            end_pt = points[-1]
+            wpt_end = SubElement(gpx, 'wpt')
+            wpt_end.set('lat', str(end_pt['latitude']))
+            wpt_end.set('lon', str(end_pt['longitude']))
+            if end_pt['altitude'] is not None:
+                ele_end = SubElement(wpt_end, 'ele')
+                ele_end.text = str(end_pt['altitude'])
+            name_end = SubElement(wpt_end, 'name')
+            name_end.text = f"{uas_id} End"
 
-            time_elem = SubElement(trkpt, 'time')
-            # Format timestamp as ISO 8601
-            ts = point['timestamp']
-            if isinstance(ts, str):
-                time_elem.text = ts
-            else:
-                time_elem.text = ts.isoformat()
+            # track that connects all the points
+            # we can only create a track if at least 2 points exist
+            for point in points:
+                trkpt = SubElement(trkseg, 'trkpt')
+                trkpt.set('lat', str(point['latitude']))
+                trkpt.set('lon', str(point['longitude']))
+
+                if point['altitude'] is not None:
+                    ele = SubElement(trkpt, 'ele')
+                    ele.text = str(point['altitude'])
+
+                time_elem = SubElement(trkpt, 'time')
+                # Format timestamp as ISO 8601
+                ts = point['timestamp']
+                if isinstance(ts, str):
+                    time_elem.text = ts
+                else:
+                    time_elem.text = ts.isoformat()
 
     return gpx
 
