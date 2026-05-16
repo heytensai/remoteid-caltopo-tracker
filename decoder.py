@@ -56,10 +56,7 @@ class ServerConfig:
         self.caltopo_url = yaml_data["caltopo_url"]
         self.rate_limit = int(yaml_data["rate_limit"])
         self.ignore_list = set(yaml_data.get("ignore", []))
-        if filter in yaml_data:
-            self.bpf_filter = yaml_data["filter"]
-        else:
-            self.bpf_filter = ""
+        self.bpf_filter = yaml_data.get("filter", "type mgt")
         self.database = yaml_data.get("database")
 
 @dataclass
@@ -189,29 +186,62 @@ class Server:
 
         self.report(uas)
 
+    # NAN service ID for Remote ID (6 bytes = unique, no false positives)
+    _NAN_SERVICE_ID = b'\x88\x69\x19\x9d\x92\x09'
+    # Legacy OpenDroneID beacon signature (OUI fa:0b:bc followed by type 0x0d)
+    _LEGACY_BEACON_SIG = b'\xfa\x0b\xbc\x0d'
+
+    def _has_remoteid_signature(self, packet: Dot11) -> bool:
+        """ Fast check for Remote ID signatures in raw packet bytes.
+            Checks for NAN service ID or Legacy beacon signature.
+            Vendor-specific IEs are handled by the BPF filter.
+        """
+        raw = bytes(packet)
+        if self._NAN_SERVICE_ID in raw:
+            return True
+
+        if self._LEGACY_BEACON_SIG in raw:
+            return True
+
+        return False
+
     def decode_packet(self, packet: Dot11) -> UAS:
         """ Read the important bits from the Remote ID beacon and put them
             in a UAS object
         """
 
         uas = UAS()
-        uas.mac_address = packet.addr2 if hasattr(packet, 'addr2') else None
-        for msg in parse_dot11(packet):
+
+        # Fast pre-filter: check raw bytes before expensive Scapy parsing
+        if not self._has_remoteid_signature(packet):
+            return uas
+
+        # Cache getattr results to avoid repeated lookups
+        addr2 = getattr(packet, 'addr2', None)
+        uas.mac_address = addr2
+
+        # parse_dot11 yields only Remote ID messages - if empty, skip early
+        msgs = list(parse_dot11(packet))
+        if not msgs:
+            return uas
+
+        for msg in msgs:
             for d in msg.data:
-                if d.messageType == 0:
+                msg_type = d.messageType
+                if msg_type == 0:
                     uas.id = d.uasId.decode("utf-8")
-                if d.messageType == 1:
+                elif msg_type == 1:
                     uas.lat = d.latitude
                     uas.lon = d.longitude
                     # Try to get altitude - prefer geometric altitude if available
-                    if hasattr(d, 'altitudeGeo'):
-                        uas.altitude = d.altitudeGeo
-                    elif hasattr(d, 'altitudeBaro'):
-                        uas.altitude = d.altitudeBaro
-                if d.messageType == 4:
+                    alt = getattr(d, 'altitudeGeo', None)
+                    if alt is None:
+                        alt = getattr(d, 'altitudeBaro', None)
+                    uas.altitude = alt
+                elif msg_type == 4:
                     uas.operator_lat = d.operatorLatitude
                     uas.operator_lon = d.operatorLongitude
-                if d.messageType == 5:
+                elif msg_type == 5:
                     uas.operator_id = d.operatorId.decode("utf-8").rstrip('\x00')
         return uas
 
@@ -256,6 +286,8 @@ if __name__ == "__main__":
     elif args.interface:
         try:
             logger.info("Listening for packets %s", args.interface)
-            sniff(iface=args.interface, filter=conf.bpf_filter, prn=serv.on_receive, store=0)
+            while True:
+                sniff(iface=args.interface, filter=conf.bpf_filter,
+                    prn=serv.on_receive, store=0)
         except KeyboardInterrupt:
             pass
