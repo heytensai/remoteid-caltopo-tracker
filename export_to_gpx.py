@@ -178,6 +178,9 @@ def do_query(args, start_date: datetime, end_date: datetime):
         sys.exit(1)
 
 def write_gpx(points, output_file):
+    """write gps points to a gpx file
+    """
+
     try:
         # Create GPX with one track per UAS ID
         gpx = create_gpx_track(points)
