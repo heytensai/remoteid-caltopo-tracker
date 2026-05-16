@@ -149,7 +149,7 @@ def parse_date(date_str: str) -> str:
     raise ValueError(f"Invalid date format: {date_str}. Use YYYY-MM-DD or ISO datetime.")
 
 def do_query(args, start_date: datetime, end_date: datetime):
-    """Query the database and output as an gpx
+    """Query the database and output as a gpx
     """
     try:
         print(f"Querying database: {args.database}")
