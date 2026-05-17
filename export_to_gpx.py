@@ -156,7 +156,7 @@ def parse_date(date_str: str) -> str:
 
 
 def do_query(args, start_date: datetime, end_date: datetime):
-    """Query the database and output as an gpx"""
+    """Query the database and output as a gpx"""
     try:
         print(f"Querying database: {args.database}")
         points = query_database(args.database, args.uas_id, start_date, end_date)
