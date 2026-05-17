@@ -67,6 +67,7 @@ class UAS:  # pylint: disable=too-many-instance-attributes
     id: str = None
     lat: str = None
     lon: str = None
+    session_id: str = None
     mac_address: str = None
     altitude: float = None
     timestamp: datetime = field(default_factory=datetime.now)
@@ -152,6 +153,7 @@ class Server:
                 operator_longitude=(
                     float(uas.operator_lon) if uas.operator_lon is not None else None
                 ),
+                session_id=uas.session_id,
             )
 
         if self.noop:
@@ -226,11 +228,14 @@ class Server:
         if not msgs:
             return uas
 
+        uas.mac_address = packet.addr2 if hasattr(packet, "addr2") else None
         for msg in msgs:
             for d in msg.data:
                 msg_type = d.messageType
                 if msg_type == 0:
                     uas.id = d.uasId.decode("utf-8")
+                    if hasattr(d, "sessionId"):
+                        uas.session_id = d.sessionId.decode("utf-8").rstrip("\x00")
                 elif msg_type == 1:
                     uas.lat = d.latitude
                     uas.lon = d.longitude
