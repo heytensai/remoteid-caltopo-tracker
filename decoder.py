@@ -309,11 +309,12 @@ class Server:
                     uas.operator_id = d.operatorId.decode("utf-8").rstrip("\x00")
         return uas
 
-    def _print_stats(self):
+    def print_stats(self):
         """Report statistics and restart timer"""
         if self.stats:
             logger.info(
-                "Stats: received=%d, discarded=%d, rate_limited=%d, recorded=%d, reported=%d, errors=%d, unique_ids=%d",
+                "Stats: received=%d, discarded=%d, rate_limited=%d, recorded=%d,"
+                " reported=%d, errors=%d, unique_ids=%d",
                 self.stats.received,
                 self.stats.discarded,
                 self.stats.rate_limited,
@@ -326,7 +327,7 @@ class Server:
 
     def _report_stats(self):
         """Report statistics and restart timer"""
-        self._print_stats()
+        self.print_stats()
         self.stats_timer = threading.Timer(60.0, self._report_stats)
         self.stats_timer.daemon = True
         self.stats_timer.start()
@@ -392,7 +393,7 @@ if __name__ == "__main__":
         serv.stats = Stats()
         for p in rdpcap(args.pcap):
             serv.on_receive(p)
-        serv._print_stats()
+        serv.print_stats()
 
     elif args.interface:
         serv.start_stats_timer()
