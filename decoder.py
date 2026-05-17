@@ -9,6 +9,7 @@ import time
 import logging
 import signal
 import sys
+import threading
 
 import yaml
 import requests
@@ -120,6 +121,33 @@ class UAS:  # pylint: disable=too-many-instance-attributes
 
 
 @dataclass
+class Stats:
+    """Statistics counters for packet processing"""
+
+    received: int = 0
+    discarded: int = 0
+    rate_limited: int = 0
+    recorded: int = 0
+    reported: int = 0
+    errors: int = 0
+    unique_ids: set = None
+
+    def __post_init__(self):
+        if self.unique_ids is None:
+            self.unique_ids = set()
+
+    def reset(self):
+        """Reset all counters to zero"""
+        self.received = 0
+        self.discarded = 0
+        self.rate_limited = 0
+        self.recorded = 0
+        self.reported = 0
+        self.errors = 0
+        self.unique_ids.clear()
+
+
+@dataclass
 class Server:
     """Handles UAS Remote ID packet processing and CalTopo reporting."""
 
@@ -128,6 +156,8 @@ class Server:
     config: ServerConfig
     noop: bool = False
     database: RemoteIDDatabase = None
+    stats: Stats = None
+    stats_timer: threading.Timer = None
 
     def report(self, uas):
         """Upload data to CalTopo and store in database"""
@@ -137,6 +167,8 @@ class Server:
         delta = current_time - last_update
         if delta < self.config.rate_limit:
             logger.debug("Rate limited %s", uas.id)
+            if self.stats:
+                self.stats.rate_limited += 1
             return
 
         self.last_update[uas.id] = current_time
@@ -159,6 +191,8 @@ class Server:
                 ),
                 session_id=uas.session_id,
             )
+            if self.stats:
+                self.stats.recorded += 1
 
         # Get alias for display/reporting, fallback to original ID
         display_id = self.config.alias_map.get(uas.id, uas.id)
@@ -172,8 +206,12 @@ class Server:
         try:
             resp = requests.get(url, timeout=10)
             logger.debug("CalTopo %s %.100s", resp.status_code, resp.text)
+            if self.stats:
+                self.stats.reported += 1
         except RequestException as e:
             logger.error("Exception %s", e)
+            if self.stats:
+                self.stats.errors += 1
 
     def on_receive(self, packet):
         """Event handler for sniffed packets"""
@@ -186,15 +224,25 @@ class Server:
         if not uas.valid():
             return
 
+        if self.stats:
+            self.stats.received += 1
+            self.stats.unique_ids.add(uas.id)
+
         logger.debug("RX %s %s %s", uas.id, uas.lon, uas.lat)
 
         if uas.id in self.config.ignore_list:
+            if self.stats:
+                self.stats.discarded += 1
             return
 
         if self.config.allow_list and uas.id not in self.config.allow_list:
+            if self.stats:
+                self.stats.discarded += 1
             return
 
         if not uas.url_safe():
+            if self.stats:
+                self.stats.discarded += 1
             return
 
         self.report(uas)
@@ -261,11 +309,45 @@ class Server:
                     uas.operator_id = d.operatorId.decode("utf-8").rstrip("\x00")
         return uas
 
+    def _print_stats(self):
+        """Report statistics and restart timer"""
+        if self.stats:
+            logger.info(
+                "Stats: received=%d, discarded=%d, rate_limited=%d, recorded=%d, reported=%d, errors=%d, unique_ids=%d",
+                self.stats.received,
+                self.stats.discarded,
+                self.stats.rate_limited,
+                self.stats.recorded,
+                self.stats.reported,
+                self.stats.errors,
+                len(self.stats.unique_ids),
+            )
+            self.stats.reset()
+
+    def _report_stats(self):
+        """Report statistics and restart timer"""
+        self._print_stats()
+        self.stats_timer = threading.Timer(60.0, self._report_stats)
+        self.stats_timer.daemon = True
+        self.stats_timer.start()
+
+    def start_stats_timer(self):
+        """Start the statistics reporting timer"""
+        self.stats = Stats()
+        self._report_stats()
+
+    def stop_stats_timer(self):
+        """Stop the statistics reporting timer"""
+        if self.stats_timer:
+            self.stats_timer.cancel()
+
     def __init__(self, config: ServerConfig, noop: bool = False):
         self.config = config
         self.url_prefix = self.config.caltopo_url
         self.last_update = {}
         self.noop = noop
+        self.stats = None
+        self.stats_timer = None
         logging.basicConfig(
             level=self.config.logging_level,
             format="{asctime} - {levelname} - {message}",
@@ -307,10 +389,13 @@ if __name__ == "__main__":
     serv = Server(conf, noop=args.noop)
 
     if args.pcap:
+        serv.stats = Stats()
         for p in rdpcap(args.pcap):
             serv.on_receive(p)
+        serv._print_stats()
 
     elif args.interface:
+        serv.start_stats_timer()
         try:
             logger.info("Listening for packets %s", args.interface)
             while True:
@@ -322,3 +407,5 @@ if __name__ == "__main__":
                 )
         except KeyboardInterrupt:
             pass
+        finally:
+            serv.stop_stats_timer()
