@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ServerConfig:
+class ServerConfig:  # pylint: disable=too-many-instance-attributes
     """Read configuration from a YAML file"""
 
     rate_limit: int
