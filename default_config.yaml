@@ -9,3 +9,7 @@ ignore:
 # if set, only the following UAS IDs will be monitored
 #allow:
 #  - "<your_uas_id_here>"
+
+# map UAS IDs to custom display names
+#alias:
+#  "<original_uas_id>": "<custom_name>"

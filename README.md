@@ -16,6 +16,7 @@ Remote ID is a broadcast system that transmits identification and location infor
 - **SQLite Database Storage**: Optionally store all Remote ID data locally for analysis and record-keeping
 - **Ignore List**: Filter out specific UAS IDs from reporting
 - **Allow List**: Allow only specific UAS IDs to be monitored
+- **Alias Mapping**: Map UAS IDs to custom display names
 - **Rate Limiting**: Configurable throttling to prevent API spam
 
 ## Dependencies
@@ -79,6 +80,10 @@ ignore:
 # List of UAS IDs to monitor (e.g., your own drones)
 allow:
   - "<your_uas_id_here>"
+
+# Optional: Map UAS IDs to custom display names
+alias:
+  "<original_uas_id>": "<custom_name>"
 
 # Optional: SQLite database path for storing Remote ID data
 # If not specified, no database will be used
