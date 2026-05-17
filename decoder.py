@@ -272,11 +272,12 @@ if __name__ == "__main__":
     elif args.interface:
         try:
             logger.info("Listening for packets %s", args.interface)
-            sniff(
-                iface=args.interface,
-                filter=conf.bpf_filter,
-                prn=serv.on_receive,
-                store=0,
-            )
+            while True:
+                sniff(
+                    iface=args.interface,
+                    filter=conf.bpf_filter,
+                    prn=serv.on_receive,
+                    store=0,
+                )
         except KeyboardInterrupt:
             pass
