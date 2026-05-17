@@ -21,10 +21,10 @@ from database import RemoteIDDatabase
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class ServerConfig:
-    """ Read configuration from a YAML file
-    """
+    """Read configuration from a YAML file"""
 
     rate_limit: int
     ignore_list: set[str]
@@ -62,14 +62,15 @@ class ServerConfig:
             self.bpf_filter = ""
         self.database = yaml_data.get("database")
 
+
 @dataclass
 class UAS:  # pylint: disable=too-many-instance-attributes
-    """ Data received from a Remote ID packet
-    """
+    """Data received from a Remote ID packet"""
 
     id: str = None
     lat: str = None
     lon: str = None
+    session_id: str = None
     mac_address: str = None
     altitude: float = None
     timestamp: datetime = field(default_factory=datetime.now)
@@ -78,9 +79,9 @@ class UAS:  # pylint: disable=too-many-instance-attributes
     operator_lon: float = None
 
     def valid(self) -> bool:
-        """ Check whether all fields have been populated. This is necessary
-            because data is spread across multiple Remote ID packets, so won't
-            all be received at the same time.
+        """Check whether all fields have been populated. This is necessary
+        because data is spread across multiple Remote ID packets, so won't
+        all be received at the same time.
         """
         if self.id is None:
             return False
@@ -91,9 +92,9 @@ class UAS:  # pylint: disable=too-many-instance-attributes
         return True
 
     def url_safe(self) -> bool:
-        """ Validate that id, lat, and lon are safe for use in a URL.
-            - id: must be alphanumeric
-            - lat, lon: must be strictly numeric (including negative sign and decimal)
+        """Validate that id, lat, and lon are safe for use in a URL.
+        - id: must be alphanumeric
+        - lat, lon: must be strictly numeric (including negative sign and decimal)
         """
         if not self.id or not self.id.isalnum():
             logger.warning("Invalid UAS ID: %s", self.id)
@@ -111,16 +112,15 @@ class UAS:  # pylint: disable=too-many-instance-attributes
         return True
 
     def get_altitude(self) -> float:
-        """ Get altitude as a float, returning 0 if None
-        """
+        """Get altitude as a float, returning 0 if None"""
         if self.altitude is None:
             return 0.0
         return float(self.altitude)
 
+
 @dataclass
 class Server:
-    """ Handles UAS Remote ID packet processing and CalTopo reporting.
-    """
+    """Handles UAS Remote ID packet processing and CalTopo reporting."""
 
     url_prefix: str
     last_update: dict[str, float]
@@ -129,8 +129,7 @@ class Server:
     database: RemoteIDDatabase = None
 
     def report(self, uas):
-        """ Upload data to CalTopo and store in database
-        """
+        """Upload data to CalTopo and store in database"""
 
         current_time = time.time()
         last_update = self.last_update.get(uas.id, 0)
@@ -151,8 +150,13 @@ class Server:
                 longitude=float(uas.lon),
                 altitude=uas.get_altitude(),
                 operator_id=uas.operator_id,
-                operator_latitude=float(uas.operator_lat) if uas.operator_lat is not None else None,
-                operator_longitude=float(uas.operator_lon) if uas.operator_lon is not None else None
+                operator_latitude=(
+                    float(uas.operator_lat) if uas.operator_lat is not None else None
+                ),
+                operator_longitude=(
+                    float(uas.operator_lon) if uas.operator_lon is not None else None
+                ),
+                session_id=uas.session_id,
             )
 
         if self.noop:
@@ -168,8 +172,7 @@ class Server:
             logger.error("Exception %s", e)
 
     def on_receive(self, packet):
-        """ Event handler for sniffed packets
-        """
+        """Event handler for sniffed packets"""
 
         if not packet.haslayer(Dot11):
             return
@@ -190,29 +193,31 @@ class Server:
         self.report(uas)
 
     def decode_packet(self, packet: Dot11) -> UAS:
-        """ Read the important bits from the Remote ID beacon and put them
-            in a UAS object
+        """Read the important bits from the Remote ID beacon and put them
+        in a UAS object
         """
 
         uas = UAS()
-        uas.mac_address = packet.addr2 if hasattr(packet, 'addr2') else None
+        uas.mac_address = packet.addr2 if hasattr(packet, "addr2") else None
         for msg in parse_dot11(packet):
             for d in msg.data:
                 if d.messageType == 0:
                     uas.id = d.uasId.decode("utf-8")
+                    if hasattr(d, "sessionId"):
+                        uas.session_id = d.sessionId.decode("utf-8").rstrip("\x00")
                 if d.messageType == 1:
                     uas.lat = d.latitude
                     uas.lon = d.longitude
                     # Try to get altitude - prefer geometric altitude if available
-                    if hasattr(d, 'altitudeGeo'):
+                    if hasattr(d, "altitudeGeo"):
                         uas.altitude = d.altitudeGeo
-                    elif hasattr(d, 'altitudeBaro'):
+                    elif hasattr(d, "altitudeBaro"):
                         uas.altitude = d.altitudeBaro
                 if d.messageType == 4:
                     uas.operator_lat = d.operatorLatitude
                     uas.operator_lon = d.operatorLongitude
                 if d.messageType == 5:
-                    uas.operator_id = d.operatorId.decode("utf-8").rstrip('\x00')
+                    uas.operator_id = d.operatorId.decode("utf-8").rstrip("\x00")
         return uas
 
     def __init__(self, config: ServerConfig, noop: bool = False):
@@ -220,18 +225,22 @@ class Server:
         self.url_prefix = self.config.caltopo_url
         self.last_update = {}
         self.noop = noop
-        logging.basicConfig(level=self.config.logging_level,
-            format="{asctime} - {levelname} - {message}", style="{")
+        logging.basicConfig(
+            level=self.config.logging_level,
+            format="{asctime} - {levelname} - {message}",
+            style="{",
+        )
 
         # Initialize database if configured
         if self.config.database:
             self.database = RemoteIDDatabase(self.config.database)
 
-def signal_handler(signum, frame): # pylint: disable=unused-argument
-    """ Catch system signals
-    """
+
+def signal_handler(signum, frame):  # pylint: disable=unused-argument
+    """Catch system signals"""
     logger.info("Shutting down...")
     sys.exit(0)
+
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
@@ -240,10 +249,17 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     group = argparser.add_mutually_exclusive_group(required=True)
     _ = group.add_argument("--pcap", help="pcap file to read packets from")
-    _ = group.add_argument("--interface", help="name of wireless interface to sniff from")
-    _ = argparser.add_argument("--config", default="config.yaml", help="yaml configuration file")
-    _ = argparser.add_argument("--noop", action="store_true",
-        help="do not send data to CalTopo (no operation mode)")
+    _ = group.add_argument(
+        "--interface", help="name of wireless interface to sniff from"
+    )
+    _ = argparser.add_argument(
+        "--config", default="config.yaml", help="yaml configuration file"
+    )
+    _ = argparser.add_argument(
+        "--noop",
+        action="store_true",
+        help="do not send data to CalTopo (no operation mode)",
+    )
     args = argparser.parse_args()
 
     conf = ServerConfig(args.config)
@@ -256,6 +272,11 @@ if __name__ == "__main__":
     elif args.interface:
         try:
             logger.info("Listening for packets %s", args.interface)
-            sniff(iface=args.interface, filter=conf.bpf_filter, prn=serv.on_receive, store=0)
+            sniff(
+                iface=args.interface,
+                filter=conf.bpf_filter,
+                prn=serv.on_receive,
+                store=0,
+            )
         except KeyboardInterrupt:
             pass

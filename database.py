@@ -46,6 +46,7 @@ class RemoteIDDatabase:
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                     mac_address TEXT,
                     uas_id TEXT,
+                    session_id TEXT,
                     latitude REAL,
                     longitude REAL,
                     altitude REAL,
@@ -62,17 +63,17 @@ class RemoteIDDatabase:
     def store(self, timestamp: datetime, mac_address: str, uas_id: str,
               latitude: float, longitude: float, altitude: float,
               operator_id: str = None, operator_latitude: float = None,
-              operator_longitude: float = None):
+              operator_longitude: float = None, session_id: str = None):
         """ Store a Remote ID record in the database
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
                     """INSERT INTO remoteid
-                       (timestamp, mac_address, uas_id, latitude, longitude, altitude,
+                       (timestamp, mac_address, uas_id, session_id, latitude, longitude, altitude,
                         operator_id, operator_latitude, operator_longitude)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (timestamp, mac_address, uas_id, latitude, longitude, altitude,
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (timestamp, mac_address, uas_id, session_id, latitude, longitude, altitude,
                      operator_id, operator_latitude, operator_longitude)
                 )
                 conn.commit()
