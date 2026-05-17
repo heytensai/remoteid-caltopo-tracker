@@ -29,6 +29,7 @@ class ServerConfig:  # pylint: disable=too-many-instance-attributes
     rate_limit: int
     ignore_list: set[str]
     allow_list: set[str]
+    alias_map: dict[str, str]
     caltopo_url: str
     logging: str
     logging_level: int
@@ -58,6 +59,7 @@ class ServerConfig:  # pylint: disable=too-many-instance-attributes
         self.rate_limit = int(yaml_data["rate_limit"])
         self.ignore_list = set(yaml_data.get("ignore", []))
         self.allow_list = set(yaml_data.get("allow", []))
+        self.alias_map = yaml_data.get("alias", {})
         self.bpf_filter = yaml_data.get("filter", "type mgt")
         self.database = yaml_data.get("database")
 
@@ -158,12 +160,15 @@ class Server:
                 session_id=uas.session_id,
             )
 
-        if self.noop:
-            logger.info("TX %s %s %s (NOOP)", uas.id, uas.lon, uas.lat)
-            return
-        logger.info("TX %s %s %s", uas.id, uas.lon, uas.lat)
+        # Get alias for display/reporting, fallback to original ID
+        display_id = self.config.alias_map.get(uas.id, uas.id)
 
-        url = f"{self.url_prefix}?id={uas.id}&lat={uas.lat}&lng={uas.lon}"
+        if self.noop:
+            logger.info("TX %s %s %s (NOOP)", display_id, uas.lon, uas.lat)
+            return
+        logger.info("TX %s %s %s", display_id, uas.lon, uas.lat)
+
+        url = f"{self.url_prefix}?id={display_id}&lat={uas.lat}&lng={uas.lon}"
         try:
             resp = requests.get(url, timeout=10)
             logger.debug("CalTopo %s %.100s", resp.status_code, resp.text)
