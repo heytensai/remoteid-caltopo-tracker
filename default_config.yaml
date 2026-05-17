@@ -5,3 +5,7 @@ filter: "type mgt subtype action"
 #database: 'archive.db'
 ignore:
   - "<your_uas_id_here>"
+
+# if set, only the following UAS IDs will be monitored
+#allow:
+#  - "<your_uas_id_here>"
