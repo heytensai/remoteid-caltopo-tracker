@@ -15,6 +15,7 @@ Remote ID is a broadcast system that transmits identification and location infor
 - **CalTopo Integration**: Send position updates directly to CalTopo maps
 - **SQLite Database Storage**: Optionally store all Remote ID data locally for analysis and record-keeping
 - **Ignore List**: Filter out specific UAS IDs from reporting
+- **Allow List**: Allow only specific UAS IDs to be monitored
 - **Rate Limiting**: Configurable throttling to prevent API spam
 
 ## Dependencies
@@ -73,6 +74,10 @@ caltopo_url: 'https://caltopo.com/api/v1/position/report/<your_key_here>'
 
 # List of UAS IDs to ignore (e.g., your own drones)
 ignore:
+  - "<your_uas_id_here>"
+
+# List of UAS IDs to monitor (e.g., your own drones)
+allow:
   - "<your_uas_id_here>"
 
 # Optional: SQLite database path for storing Remote ID data

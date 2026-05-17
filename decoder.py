@@ -23,11 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ServerConfig:
+class ServerConfig:  # pylint: disable=too-many-instance-attributes
     """Read configuration from a YAML file"""
 
     rate_limit: int
     ignore_list: set[str]
+    allow_list: set[str]
     caltopo_url: str
     logging: str
     logging_level: int
@@ -56,6 +57,7 @@ class ServerConfig:
         self.caltopo_url = yaml_data["caltopo_url"]
         self.rate_limit = int(yaml_data["rate_limit"])
         self.ignore_list = set(yaml_data.get("ignore", []))
+        self.allow_list = set(yaml_data.get("allow", []))
         self.bpf_filter = yaml_data.get("filter", "type mgt")
         self.database = yaml_data.get("database")
 
@@ -182,6 +184,9 @@ class Server:
         logger.debug("RX %s %s %s", uas.id, uas.lon, uas.lat)
 
         if uas.id in self.config.ignore_list:
+            return
+
+        if self.config.allow_list and uas.id not in self.config.allow_list:
             return
 
         if not uas.url_safe():
