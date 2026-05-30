@@ -259,7 +259,11 @@ const UIController = {
                 ? `${drone.altitude.toFixed(0)}m`
                 : 'N/A';
             const time = new Date(drone.timestamp);
-            const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const year = time.getFullYear();
+            const month = String(time.getMonth() + 1).padStart(2, '0');
+            const day = String(time.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
+            const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
             const isSelected = this.selectedDrones.has(drone.uas_id);
 
@@ -268,7 +272,7 @@ const UIController = {
                     <div class="drone-color" style="background-color: ${color};"></div>
                     <div class="drone-info">
                         <div class="drone-id">${drone.uas_id}</div>
-                        <div class="drone-meta">Alt: ${altitude} | ${timeStr}</div>
+                        <div class="drone-meta">Alt: ${altitude} | ${dateStr} ${timeStr}</div>
                     </div>
                     <div class="drone-actions">
                         <button class="focus-btn" title="Focus on map">
@@ -325,7 +329,7 @@ const UIController = {
      */
     _updateLastUpdateTime() {
         const now = new Date();
-        this.elements.lastUpdateSpan.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+        this.elements.lastUpdateSpan.textContent = `Last updated: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`;
     },
 
     /**

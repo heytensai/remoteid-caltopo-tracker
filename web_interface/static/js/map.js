@@ -236,7 +236,10 @@ const MapController = {
         const altitude = drone.altitude !== null && drone.altitude !== undefined
             ? `${drone.altitude.toFixed(1)}m`
             : 'N/A';
-        const time = new Date(drone.timestamp).toLocaleString();
+        const time = new Date(drone.timestamp);
+        const dateStr = time.toLocaleDateString('en-CA');
+        const timeStr = time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const displayTime = `${dateStr} ${timeStr}`;
 
         return `
             <div class="popup-title" style="color: ${color};">
@@ -248,7 +251,7 @@ const MapController = {
             </div>
             <div class="popup-row">
                 <span class="popup-label">Last seen:</span>
-                <span class="popup-value">${time}</span>
+                <span class="popup-value">${displayTime}</span>
             </div>
             <div class="popup-row">
                 <span class="popup-label">Position:</span>
