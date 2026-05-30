@@ -78,31 +78,53 @@ const API = {
     },
 
     /**
-     * Generic GET request
+     * Generic GET request with retry logic
      */
-    async _get(url) {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    async _get(url, retries = 2, delay = 500) {
+        let lastError;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            } catch (error) {
+                lastError = error;
+                if (attempt < retries) {
+                    await new Promise(r => setTimeout(r, delay));
+                }
+            }
         }
-        return response.json();
+        throw lastError;
     },
 
     /**
-     * Generic POST request
+     * Generic POST request with retry logic
      */
-    async _post(url, data = {}) {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    async _post(url, data = {}, retries = 2, delay = 500) {
+        let lastError;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            } catch (error) {
+                lastError = error;
+                if (attempt < retries) {
+                    await new Promise(r => setTimeout(r, delay));
+                }
+            }
         }
-        return response.json();
+        throw lastError;
     }
 };
 

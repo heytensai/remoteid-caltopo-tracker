@@ -75,9 +75,85 @@ class WebDatabase:
             conn.commit()
         logger.debug("Database initialized at %s", self.db_path)
 
+    @staticmethod
+    def _validate_record(row: tuple) -> Optional[tuple]:
+        """Validate and sanitize a record before import.
+        
+        Returns sanitized tuple or None if record is invalid.
+        row: (id, timestamp, mac_address, uas_id, session_id, lat, lon, alt, op_id, op_lat, op_lon)
+        """
+        # timestamp must be present
+        if not row[1]:
+            return None
+
+        # uas_id must be present
+        if not row[3]:
+            return None
+
+        # latitude and longitude must be valid numbers
+        try:
+            lat = float(row[5]) if row[5] is not None else None
+            if lat is not None and (lat < -90 or lat > 90):
+                logger.debug("Invalid latitude %s for uas_id %s, skipping", row[5], row[3])
+                return None
+        except (TypeError, ValueError):
+            logger.debug("Non-numeric latitude %s for uas_id %s, skipping", row[5], row[3])
+            return None
+
+        try:
+            lon = float(row[6]) if row[6] is not None else None
+            if lon is not None and (lon < -180 or lon > 180):
+                logger.debug("Invalid longitude %s for uas_id %s, skipping", row[6], row[3])
+                return None
+        except (TypeError, ValueError):
+            logger.debug("Non-numeric longitude %s for uas_id %s, skipping", row[6], row[3])
+            return None
+
+        # altitude is optional but must be numeric if present
+        alt = None
+        if row[7] is not None:
+            try:
+                alt = float(row[7])
+            except (TypeError, ValueError):
+                logger.debug("Non-numeric altitude %s for uas_id %s, skipping", row[7], row[3])
+                return None
+
+        # operator coordinates are optional but must be valid if present
+        op_lat = None
+        if row[9] is not None:
+            try:
+                op_lat = float(row[9])
+                if op_lat < -90 or op_lat > 90:
+                    op_lat = None
+            except (TypeError, ValueError):
+                op_lat = None
+
+        op_lon = None
+        if row[10] is not None:
+            try:
+                op_lon = float(row[10])
+                if op_lon < -180 or op_lon > 180:
+                    op_lon = None
+            except (TypeError, ValueError):
+                op_lon = None
+
+        return (
+            row[1],           # timestamp
+            row[2] if len(row) > 2 else None,  # mac_address
+            row[3],           # uas_id
+            row[4] if len(row) > 4 else None,  # session_id
+            lat,              # latitude
+            lon,              # longitude
+            alt,              # altitude
+            row[8] if len(row) > 8 else None,  # operator_id
+            op_lat,           # operator_latitude
+            op_lon            # operator_longitude
+        )
+
     def import_from_collector(self, source_db_path: str, source_name: str) -> int:
         """Import new records from a collector's database"""
         count = 0
+        skipped = 0
         try:
             # Get last sync time for this source
             last_sync = self._get_last_sync(source_name)
@@ -94,13 +170,9 @@ class WebDatabase:
                 else:
                     cursor = src_conn.execute(f"SELECT {columns} FROM remoteid ORDER BY timestamp")
 
-                # Import into web database
-                # Explicitly map columns to avoid order mismatches
+                # Import into web database using named parameters
                 with sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES) as dest_conn:
                     for row in cursor:
-                        # row indices from source: id[0], timestamp[1], mac[2], uas_id[3],
-                        # session_id[4], lat[5], lon[6], alt[7], op_id[8], op_lat[9], op_lon[10]
-
                         # Skip if already exists (check uas_id + timestamp)
                         existing = dest_conn.execute(
                             "SELECT 1 FROM remoteid WHERE uas_id = ? AND timestamp = ?",
@@ -108,37 +180,86 @@ class WebDatabase:
                         ).fetchone()
 
                         if not existing:
+                            # Validate and sanitize the record
+                            validated = self._validate_record(row)
+                            if validated is None:
+                                skipped += 1
+                                continue
+
                             dest_conn.execute("""
                                 INSERT INTO remoteid
                                 (source, timestamp, mac_address, uas_id, session_id,
                                  latitude, longitude, altitude, operator_id,
                                  operator_latitude, operator_longitude)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                source_name,      # source
-                                row[1],           # timestamp
-                                row[2],           # mac_address
-                                row[3],           # uas_id
-                                row[4] if len(row) > 4 else None,  # session_id
-                                row[5] if len(row) > 5 else None,  # latitude
-                                row[6] if len(row) > 6 else None,  # longitude
-                                row[7] if len(row) > 7 else None,  # altitude
-                                row[8] if len(row) > 8 else None,  # operator_id
-                                row[9] if len(row) > 9 else None,  # operator_latitude
-                                row[10] if len(row) > 10 else None  # operator_longitude
-                            ))
+                                VALUES (:source, :timestamp, :mac_address, :uas_id, :session_id,
+                                        :latitude, :longitude, :altitude, :operator_id,
+                                        :operator_latitude, :operator_longitude)
+                            """, {
+                                'source': source_name,
+                                'timestamp': validated[0],
+                                'mac_address': validated[1],
+                                'uas_id': validated[2],
+                                'session_id': validated[3],
+                                'latitude': validated[4],
+                                'longitude': validated[5],
+                                'altitude': validated[6],
+                                'operator_id': validated[7],
+                                'operator_latitude': validated[8],
+                                'operator_longitude': validated[9]
+                            })
                             count += 1
 
                     dest_conn.commit()
 
             # Update sync log
             self._update_sync_log(source_name, count)
-            logger.info("Imported %d records from %s", count, source_name)
+            if skipped > 0:
+                logger.info("Imported %d records from %s (skipped %d invalid)", count, source_name, skipped)
+            else:
+                logger.info("Imported %d records from %s", count, source_name)
             return count
 
         except sqlite3.Error as e:
             logger.error("Database import error from %s: %s", source_name, e)
             return 0
+
+    @staticmethod
+    def _sanitize_record(record: dict) -> dict:
+        """Sanitize a record for API response, ensuring safe values.
+        
+        Converts any non-numeric values to None, ensuring frontend doesn't crash.
+        """
+        sanitized = {}
+        for key, value in record.items():
+            if key in ('latitude', 'longitude', 'altitude',
+                       'operator_latitude', 'operator_longitude'):
+                try:
+                    if value is not None:
+                        fval = float(value)
+                        # Clamp lat/lon to valid ranges
+                        if key in ('latitude', 'operator_latitude') and (fval < -90 or fval > 90):
+                            sanitized[key] = None
+                        elif key in ('longitude', 'operator_longitude') and (fval < -180 or fval > 180):
+                            sanitized[key] = None
+                        else:
+                            sanitized[key] = fval
+                    else:
+                        sanitized[key] = None
+                except (TypeError, ValueError):
+                    logger.debug("Non-numeric value for %s, setting to None", key)
+                    sanitized[key] = None
+            elif key == 'timestamp':
+                # Ensure timestamp is a string or None
+                if value is not None:
+                    try:
+                        sanitized[key] = str(value)
+                    except Exception:
+                        sanitized[key] = None
+                else:
+                    sanitized[key] = None
+            else:
+                sanitized[key] = value
+        return sanitized
 
     def _get_last_sync(self, source_name: str) -> Optional[datetime]:
         """Get the last sync time for a source"""
@@ -179,7 +300,7 @@ class WebDatabase:
                 ORDER BY r1.uas_id
             """, (start_time, end_time))
 
-            return [dict(row) for row in cursor.fetchall()]
+            return [self._sanitize_record(dict(row)) for row in cursor.fetchall()]
 
     def get_positions(self, start_time: datetime, end_time: datetime,
                       uas_id: Optional[str] = None, limit: int = 5000) -> List[Dict]:
@@ -202,7 +323,7 @@ class WebDatabase:
                     LIMIT ?
                 """, (start_time, end_time, limit))
 
-            return [dict(row) for row in cursor.fetchall()]
+            return [self._sanitize_record(dict(row)) for row in cursor.fetchall()]
 
     def get_track(self, uas_id: str, start_time: datetime, end_time: datetime) -> List[Dict]:
         """Get track (ordered positions) for a specific drone"""
@@ -216,7 +337,7 @@ class WebDatabase:
                 ORDER BY timestamp ASC
             """, (uas_id, start_time, end_time))
 
-            return [dict(row) for row in cursor.fetchall()]
+            return [self._sanitize_record(dict(row)) for row in cursor.fetchall()]
 
     def get_operators(self, start_time: datetime, end_time: datetime) -> List[Dict]:
         """Get latest operator positions for drones in time window"""
@@ -238,7 +359,7 @@ class WebDatabase:
                 ORDER BY r1.uas_id
             """, (start_time, end_time))
 
-            return [dict(row) for row in cursor.fetchall()]
+            return [self._sanitize_record(dict(row)) for row in cursor.fetchall()]
 
     def get_bounds(self, start_time: datetime, end_time: datetime) -> Optional[Tuple]:
         """Get bounding box of all positions in time window"""

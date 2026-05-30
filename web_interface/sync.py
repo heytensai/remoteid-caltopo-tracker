@@ -92,11 +92,12 @@ class SyncManager:
 
     def _sync_remote_collector(self, collector: CollectorConfig):
         """Sync from a remote collector using rsync"""
-        # Create temp file for incoming data
-        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
-            temp_path = tmp.name
-
+        temp_path = None
         try:
+            # Create temp file for incoming data
+            with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+                temp_path = tmp.name
+
             # Build rsync command
             remote_path = f"{collector.host}:{collector.remote_db_path}"
             cmd = [
@@ -127,11 +128,12 @@ class SyncManager:
         except Exception as e:
             logger.error("Error syncing %s: %s", collector.name, e)
         finally:
-            # Clean up temp file
-            try:
-                os.unlink(temp_path)
-            except OSError:
-                pass
+            # Always clean up temp file
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
 
     def force_sync(self):
         """Force an immediate sync (useful for manual refresh)"""

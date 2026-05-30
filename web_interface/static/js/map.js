@@ -30,21 +30,16 @@ const MapController = {
         }
 
         // Create map
-        const defaultCenter = [40.7128, -74.0060]; // NYC default
+        const defaultCenter = [20, 0]; // World view centered on equator/prime meridian
         const center = (this.config.center_lat && this.config.center_lon)
             ? [this.config.center_lat, this.config.center_lon]
             : defaultCenter;
-        const zoom = this.config.default_zoom || 12;
+        const zoom = this.config.default_zoom || 3;
 
         this.map = L.map('map', {
             zoomControl: true,
             attributionControl: true
         }).setView(center, zoom);
-
-        // Add zoom control to top right
-        L.control.zoom({
-            position: 'topright'
-        }).addTo(this.map);
 
         // Add tile layer based on config
         this._addTileLayer();
@@ -203,8 +198,8 @@ const MapController = {
         this.layers.tracks.clearLayers();
         this.tracks = {};
 
-        // Fetch and draw tracks for each drone
-        for (const uasId of uasIds) {
+        // Fetch and draw tracks for each drone in parallel
+        await Promise.all(uasIds.map(async uasId => {
             try {
                 const response = await API.getTrack(uasId, start, end);
                 if (response.track && response.track.length > 1) {
@@ -214,7 +209,7 @@ const MapController = {
             } catch (e) {
                 console.error(`Failed to get track for ${uasId}:`, e);
             }
-        }
+        }));
     },
 
     /**

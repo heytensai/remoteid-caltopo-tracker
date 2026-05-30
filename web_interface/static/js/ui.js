@@ -84,8 +84,14 @@ const UIController = {
         });
 
         // Track opacity
+        let opacityTimeout = null;
         this.elements.trackOpacitySlider.addEventListener('input', (e) => {
-            MapController.setTrackOpacity(e.target.value);
+            if (opacityTimeout) {
+                clearTimeout(opacityTimeout);
+            }
+            opacityTimeout = setTimeout(() => {
+                MapController.setTrackOpacity(e.target.value);
+            }, 50);
         });
 
         // Close sidebar when clicking on map (mobile)
