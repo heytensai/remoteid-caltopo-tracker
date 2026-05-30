@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Remote ID Tracker</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- App Container wraps sidebar and main content -->
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2><i class="fas fa-helicopter"></i> Drones</h2>
+                <button id="closeSidebar" class="close-btn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="droneList" class="drone-list">
+                <!-- Populated by JavaScript -->
+            </div>
+            <div class="sidebar-footer">
+                <label>
+                    <input type="checkbox" id="showOperators" checked>
+                    Show Operators
+                </label>
+                <label>
+                    <input type="checkbox" id="showTracks" checked>
+                    Show Tracks
+                </label>
+                <div class="opacity-control">
+                    <span>Track Opacity</span>
+                    <input type="range" id="trackOpacity" min="0" max="100" value="60">
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="main" class="main">
+            <!-- Header -->
+            <div class="header">
+                <button id="openSidebar" class="menu-btn">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h1>Remote ID Tracker</h1>
+                <button id="refreshBtn" class="refresh-btn" title="Refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+
+            <!-- Map Container -->
+            <div id="map" class="map-container"></div>
+
+            <!-- Time Controls -->
+            <div class="time-controls">
+                <div class="time-inputs">
+                    <input type="text" id="startTime" class="flatpickr" placeholder="Start time">
+                    <input type="text" id="endTime" class="flatpickr" placeholder="End time">
+                </div>
+                <div class="time-presets">
+                    <button data-hours="1">1h</button>
+                    <button data-hours="6">6h</button>
+                    <button data-hours="24" class="active">24h</button>
+                    <button data-hours="168">7d</button>
+                </div>
+                <div class="last-update">
+                    <span id="lastUpdate">Last updated: never</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+    <!-- Application JS -->
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/map.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+</body>
+</html>
