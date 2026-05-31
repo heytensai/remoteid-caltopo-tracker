@@ -331,7 +331,8 @@ class WebDatabase:
             conn.row_factory = sqlite3.Row
 
             cursor = conn.execute("""
-                SELECT latitude, longitude, altitude, timestamp
+                SELECT latitude, longitude, altitude, timestamp,
+                       operator_id, operator_latitude, operator_longitude
                 FROM remoteid
                 WHERE uas_id = ? AND timestamp BETWEEN ? AND ?
                 ORDER BY timestamp ASC

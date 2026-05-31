@@ -58,23 +58,73 @@
                 <button id="refreshBtn" class="refresh-btn" title="Refresh">
                     <i class="fas fa-sync-alt"></i>
                 </button>
+                <div class="header-time-controls">
+                    <div class="header-time-inputs">
+                        <input type="text" id="startTime" class="flatpickr" placeholder="Start time">
+                        <input type="text" id="endTime" class="flatpickr" placeholder="End time">
+                    </div>
+                    <div class="header-time-presets">
+                        <button data-hours="1">1h</button>
+                        <button data-hours="6">6h</button>
+                        <button data-hours="24" class="active">24h</button>
+                        <button data-hours="168">7d</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Map Container -->
             <div id="map" class="map-container"></div>
 
+            <!-- Drone Detail Panel -->
+            <div id="droneDetail" class="drone-detail">
+                <div class="drone-detail-header">
+                    <h3 class="drone-detail-title"><i class="fas fa-plane"></i> <span id="detailUasId"></span></h3>
+                    <button id="closeDetail" class="close-btn" title="Close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="drone-detail-body">
+                    <div class="detail-stats">
+                        <div class="stat-row">
+                            <span class="stat-label">Positions</span>
+                            <span class="stat-value" id="detailPositions">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Max Altitude</span>
+                            <span class="stat-value" id="detailMaxAlt">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Total Distance</span>
+                            <span class="stat-value" id="detailDistance">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Max Speed</span>
+                            <span class="stat-value" id="detailMaxSpeed">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Time Span</span>
+                            <span class="stat-value" id="detailTimeSpan">-</span>
+                        </div>
+                    </div>
+                    <div class="detail-chart-container">
+                        <canvas id="detailChart"></canvas>
+                    </div>
+                    <div class="detail-operator" id="detailOperator" style="display: none;">
+                        <h4>Operator</h4>
+                        <div class="stat-row">
+                            <span class="stat-label">ID</span>
+                            <span class="stat-value" id="detailOperatorId">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Position</span>
+                            <span class="stat-value" id="detailOperatorPos">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Time Controls -->
             <div class="time-controls">
-                <div class="time-inputs">
-                    <input type="text" id="startTime" class="flatpickr" placeholder="Start time">
-                    <input type="text" id="endTime" class="flatpickr" placeholder="End time">
-                </div>
-                <div class="time-presets">
-                    <button data-hours="1">1h</button>
-                    <button data-hours="6">6h</button>
-                    <button data-hours="24" class="active">24h</button>
-                    <button data-hours="168">7d</button>
-                </div>
                 <div class="last-update">
                     <span id="lastUpdate">Last updated: never</span>
                 </div>

@@ -12,6 +12,8 @@ const UIController = {
     defaultHours: 24,
     droneMap: {},
     loadedTracks: new Set(),
+    selectedDrone: null,
+    selectedDroneTrack: null,
 
     // DOM Elements
     elements: {},
@@ -36,6 +38,18 @@ const UIController = {
             openSidebarBtn: document.getElementById('openSidebar'),
             closeSidebarBtn: document.getElementById('closeSidebar'),
             droneList: document.getElementById('droneList'),
+            droneDetail: document.getElementById('droneDetail'),
+            closeDetailBtn: document.getElementById('closeDetail'),
+            detailUasId: document.getElementById('detailUasId'),
+            detailPositions: document.getElementById('detailPositions'),
+            detailMaxAlt: document.getElementById('detailMaxAlt'),
+            detailDistance: document.getElementById('detailDistance'),
+            detailMaxSpeed: document.getElementById('detailMaxSpeed'),
+            detailTimeSpan: document.getElementById('detailTimeSpan'),
+            detailChart: document.getElementById('detailChart'),
+            detailOperator: document.getElementById('detailOperator'),
+            detailOperatorId: document.getElementById('detailOperatorId'),
+            detailOperatorPos: document.getElementById('detailOperatorPos'),
             refreshBtn: document.getElementById('refreshBtn'),
             startTimeInput: document.getElementById('startTime'),
             endTimeInput: document.getElementById('endTime'),
@@ -43,7 +57,7 @@ const UIController = {
             showOperatorsCheckbox: document.getElementById('showOperators'),
             showTracksCheckbox: document.getElementById('showTracks'),
             trackOpacitySlider: document.getElementById('trackOpacity'),
-            timePresets: document.querySelectorAll('.time-presets button')
+            timePresets: document.querySelectorAll('.header-time-presets button')
         };
     },
 
@@ -63,6 +77,11 @@ const UIController = {
         // Refresh button
         this.elements.refreshBtn.addEventListener('click', () => {
             this.refreshData();
+        });
+
+        // Close detail panel
+        this.elements.closeDetailBtn.addEventListener('click', () => {
+            this._closeDetailPanel();
         });
 
         // Time preset buttons
@@ -201,6 +220,9 @@ const UIController = {
         this.elements.refreshBtn.classList.add('spinning');
 
         try {
+            // Close detail panel on refresh
+            this._closeDetailPanel();
+
             // Fetch drones
             const dronesResponse = await API.getDrones(this.currentStartTime, this.currentEndTime);
             const drones = dronesResponse.drones || [];
@@ -373,6 +395,9 @@ const UIController = {
                     this.loadedTracks.add(uasId);
                 }
 
+                // Open detail panel
+                this._openDetailPanel(uasId);
+
                 // Close sidebar on mobile
                 if (window.innerWidth < 768) {
                     this.elements.sidebar.classList.remove('open');
@@ -401,6 +426,269 @@ const UIController = {
     _updateLastUpdateTime() {
         const now = new Date();
         this.elements.lastUpdateSpan.textContent = `Last updated: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+    },
+
+    /**
+     * Open the drone detail panel
+     */
+    async _openDetailPanel(uasId) {
+        this.selectedDrone = uasId;
+        this.elements.detailUasId.textContent = uasId;
+        this.elements.droneDetail.classList.add('open');
+
+        // Fetch track data
+        try {
+            const response = await API.getTrack(uasId, this.currentStartTime, this.currentEndTime);
+            if (response.track && response.track.length > 0) {
+                this.selectedDroneTrack = response.track;
+                this._updateDetailStats(response.track);
+                this._drawAltitudeChart(response.track);
+            } else {
+                this._clearDetailStats();
+            }
+        } catch (e) {
+            console.error('Failed to load drone detail:', e);
+            this._clearDetailStats();
+        }
+    },
+
+    /**
+     * Close the drone detail panel
+     */
+    _closeDetailPanel() {
+        this.elements.droneDetail.classList.remove('open');
+        this.selectedDrone = null;
+        this.selectedDroneTrack = null;
+    },
+
+    /**
+     * Update detail stats from track data
+     */
+    _updateDetailStats(track) {
+        const numPositions = track.length;
+        this.elements.detailPositions.textContent = numPositions;
+
+        // Max altitude
+        const maxAlt = Math.max(...track.map(p => p.altitude || 0));
+        this.elements.detailMaxAlt.textContent = maxAlt > 0 ? `${maxAlt.toFixed(0)}m` : 'N/A';
+
+        // Total distance and max speed
+        let totalDistance = 0;
+        let maxSpeed = 0;
+
+        for (let i = 1; i < track.length; i++) {
+            const dist = this._haversineDistance(
+                track[i - 1].latitude, track[i - 1].longitude,
+                track[i].latitude, track[i].longitude
+            );
+            totalDistance += dist;
+
+            const timeDiff = (new Date(track[i].timestamp) - new Date(track[i - 1].timestamp)) / 1000;
+            if (timeDiff > 0) {
+                const speed = dist / timeDiff;
+                if (speed > maxSpeed) {
+                    maxSpeed = speed;
+                }
+            }
+        }
+
+        this.elements.detailDistance.textContent = totalDistance > 1000
+            ? `${(totalDistance / 1000).toFixed(2)} km`
+            : `${totalDistance.toFixed(0)} m`;
+
+        this.elements.detailMaxSpeed.textContent = maxSpeed > 0
+            ? `${(maxSpeed * 3.6).toFixed(1)} km/h`
+            : 'N/A';
+
+        // Time span
+        if (track.length >= 2) {
+            const firstTime = new Date(track[0].timestamp);
+            const lastTime = new Date(track[track.length - 1].timestamp);
+            const spanMs = lastTime - firstTime;
+            const spanMin = Math.floor(spanMs / 60000);
+            const spanSec = Math.floor((spanMs % 60000) / 1000);
+            this.elements.detailTimeSpan.textContent = spanMin > 0
+                ? `${spanMin}m ${spanSec}s`
+                : `${spanSec}s`;
+        } else {
+            this.elements.detailTimeSpan.textContent = 'N/A';
+        }
+
+        // Operator info
+        const lastPoint = track[track.length - 1];
+        if (lastPoint && lastPoint.operator_id) {
+            this.elements.detailOperator.style.display = 'block';
+            this.elements.detailOperatorId.textContent = lastPoint.operator_id;
+            if (lastPoint.operator_latitude != null && lastPoint.operator_longitude != null) {
+                this.elements.detailOperatorPos.textContent =
+                    `${lastPoint.operator_latitude.toFixed(4)}, ${lastPoint.operator_longitude.toFixed(4)}`;
+            } else {
+                this.elements.detailOperatorPos.textContent = 'N/A';
+            }
+        } else {
+            this.elements.detailOperator.style.display = 'none';
+        }
+    },
+
+    /**
+     * Clear detail stats
+     */
+    _clearDetailStats() {
+        this.elements.detailPositions.textContent = '-';
+        this.elements.detailMaxAlt.textContent = '-';
+        this.elements.detailDistance.textContent = '-';
+        this.elements.detailMaxSpeed.textContent = '-';
+        this.elements.detailTimeSpan.textContent = '-';
+        this.elements.detailOperator.style.display = 'none';
+    },
+
+    /**
+     * Draw altitude over time chart
+     */
+    _drawAltitudeChart(track) {
+        const canvas = this.elements.detailChart;
+        const ctx = canvas.getContext('2d');
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = 200 * dpr;
+        canvas.style.height = '200px';
+        ctx.scale(dpr, dpr);
+
+        const width = rect.width;
+        const height = 200;
+        const padding = { top: 20, right: 16, bottom: 30, left: 48 };
+
+        // Clear
+        ctx.clearRect(0, 0, width, height);
+
+        // Filter valid altitude points
+        const validPoints = track.filter(p => p.altitude != null && p.altitude > 0);
+        if (validPoints.length < 2) {
+            ctx.fillStyle = '#6c757d';
+            ctx.font = '13px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('No altitude data available', width / 2, height / 2);
+            return;
+        }
+
+        const times = validPoints.map(p => new Date(p.timestamp).getTime());
+        const altitudes = validPoints.map(p => p.altitude);
+
+        const minTime = Math.min(...times);
+        const maxTime = Math.max(...times);
+        const minAlt = Math.min(...altitudes);
+        const maxAlt = Math.max(...altitudes);
+
+        const chartWidth = width - padding.left - padding.right;
+        const chartHeight = height - padding.top - padding.bottom;
+
+        function xForTime(t) {
+            return padding.left + ((t - minTime) / (maxTime - minTime || 1)) * chartWidth;
+        }
+        function yForAlt(a) {
+            return padding.top + chartHeight - ((a - minAlt) / (maxAlt - minAlt || 1)) * chartHeight;
+        }
+
+        // Grid lines
+        ctx.strokeStyle = '#e9ecef';
+        ctx.lineWidth = 1;
+        const altRange = maxAlt - minAlt || 1;
+        const altStep = this._niceStep(altRange, 4);
+        const altStart = Math.ceil(minAlt / altStep) * altStep;
+
+        ctx.font = '10px sans-serif';
+        ctx.fillStyle = '#6c757d';
+        ctx.textAlign = 'right';
+
+        for (let a = altStart; a <= maxAlt; a += altStep) {
+            const y = yForAlt(a);
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(width - padding.right, y);
+            ctx.stroke();
+            ctx.fillText(`${a.toFixed(0)}`, padding.left - 4, y + 3);
+        }
+
+        // Altitude label
+        ctx.save();
+        ctx.translate(10, height / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#495057';
+        ctx.font = '11px sans-serif';
+        ctx.fillText('Altitude (m)', 0, 0);
+        ctx.restore();
+
+        // Draw line
+        ctx.strokeStyle = '#007bff';
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+
+        for (let i = 0; i < validPoints.length; i++) {
+            const x = xForTime(times[i]);
+            const y = yForAlt(altitudes[i]);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.stroke();
+
+        // Draw area fill
+        ctx.lineTo(xForTime(times[times.length - 1]), padding.top + chartHeight);
+        ctx.lineTo(xForTime(times[0]), padding.top + chartHeight);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0, 123, 255, 0.1)';
+        ctx.fill();
+
+        // Time labels
+        ctx.fillStyle = '#6c757d';
+        ctx.textAlign = 'center';
+        ctx.font = '10px sans-serif';
+
+        const timeRange = maxTime - minTime || 1;
+        const timeStep = this._niceStep(timeRange, 4);
+        const timeStart = Math.ceil(minTime / timeStep) * timeStep;
+
+        for (let t = timeStart; t <= maxTime; t += timeStep) {
+            const x = xForTime(t);
+            const date = new Date(t);
+            const label = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            ctx.fillText(label, x, height - 6);
+        }
+    },
+
+    /**
+     * Calculate nice step value for chart axes
+     */
+    _niceStep(range, targetTicks) {
+        const rough = range / targetTicks;
+        const pow = Math.pow(10, Math.floor(Math.log10(rough)));
+        const frac = rough / pow;
+        let nice;
+        if (frac <= 1.5) nice = 1;
+        else if (frac <= 3) nice = 2;
+        else if (frac <= 7) nice = 5;
+        else nice = 10;
+        return nice * pow;
+    },
+
+    /**
+     * Haversine distance in meters
+     */
+    _haversineDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     },
 
     /**

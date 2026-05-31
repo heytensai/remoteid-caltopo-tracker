@@ -342,6 +342,61 @@ html, body {
     animation: spin 1s linear infinite;
 }
 
+.header-time-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 12px;
+}
+
+.header-time-inputs {
+    display: flex;
+    gap: 4px;
+}
+
+.header-time-inputs input {
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    min-height: 32px;
+    width: 140px;
+}
+
+.header-time-inputs input:focus {
+    outline: none;
+    border-color: #007bff;
+}
+
+.header-time-presets {
+    display: flex;
+    gap: 4px;
+}
+
+.header-time-presets button {
+    padding: 6px 10px;
+    border: 1px solid #ced4da;
+    background: white;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.header-time-presets button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.header-time-presets button.active {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
@@ -362,9 +417,7 @@ html, body {
     border-top: 1px solid #dee2e6;
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
     z-index: 100;
-    flex-shrink: 0; /* Prevent from shrinking */
-    max-height: 150px; /* Limit height */
-    overflow-y: auto; /* Scroll if needed */
+    flex-shrink: 0;
 }
 
 .time-inputs {
@@ -474,20 +527,7 @@ html, body {
     }
 
     .time-controls {
-        padding: 16px 24px;
-    }
-
-    .time-inputs {
-        max-width: 600px;
-    }
-
-    .time-presets {
-        max-width: 600px;
-    }
-
-    .time-presets button {
         padding: 12px 16px;
-        font-size: 0.95rem;
     }
 }
 
@@ -549,4 +589,94 @@ html, body {
 
 .empty-state p {
     font-size: 1rem;
+}
+
+/* Drone Detail Panel */
+.drone-detail {
+    border-top: 1px solid #dee2e6;
+    background: #fff;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+    flex-shrink: 0;
+}
+
+.drone-detail.open {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.drone-detail-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    background: #007bff;
+    color: white;
+}
+
+.drone-detail-title {
+    font-size: 1rem;
+    font-weight: 600;
+    flex: 1;
+    margin: 0;
+}
+
+.drone-detail-title i {
+    margin-right: 8px;
+}
+
+.drone-detail-header .close-btn {
+    color: white;
+    display: flex;
+}
+
+.drone-detail-body {
+    padding: 12px 16px;
+}
+
+.detail-stats {
+    margin-bottom: 12px;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.85rem;
+}
+
+.stat-label {
+    color: #6c757d;
+}
+
+.stat-value {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.detail-chart-container {
+    margin: 12px 0;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fafafa;
+}
+
+.detail-chart-container canvas {
+    display: block;
+    width: 100%;
+}
+
+.detail-operator {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #dee2e6;
+}
+
+.detail-operator h4 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
 }
