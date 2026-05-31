@@ -191,6 +191,31 @@ const MapController = {
     },
 
     /**
+     * Remove a specific drone track from the map
+     */
+    removeTrack(uasId) {
+        if (this.tracks[uasId]) {
+            this.layers.tracks.removeLayer(this.tracks[uasId]);
+            delete this.tracks[uasId];
+        }
+    },
+
+    /**
+     * Load and draw a single drone track
+     */
+    async loadTrack(uasId, start, end) {
+        try {
+            const response = await API.getTrack(uasId, start, end);
+            if (response.track && response.track.length > 1) {
+                const color = this.getDroneColor(uasId);
+                this._drawTrack(uasId, response.track, color);
+            }
+        } catch (e) {
+            console.error(`Failed to get track for ${uasId}:`, e);
+        }
+    },
+
+    /**
      * Update tracks
      */
     async updateTracks(uasIds, start, end) {

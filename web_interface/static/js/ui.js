@@ -10,6 +10,8 @@ const UIController = {
     selectedDrones: new Set(),
     isLoading: false,
     defaultHours: 24,
+    droneMap: {},
+    loadedTracks: new Set(),
 
     // DOM Elements
     elements: {},
@@ -209,13 +211,13 @@ const UIController = {
             // Update map markers
             MapController.updateDrones(drones);
 
+            // Store drone data for lazy track loading
+            this.droneMap = {};
+            drones.forEach(d => { this.droneMap[d.uas_id] = d; });
+
             // Fetch operators
             const operatorsResponse = await API.getOperators(this.currentStartTime, this.currentEndTime);
             MapController.updateOperators(operatorsResponse.operators || []);
-
-            // Update tracks
-            const uasIds = drones.map(d => d.uas_id);
-            await MapController.updateTracks(uasIds, this.currentStartTime, this.currentEndTime);
 
             // Try to fit bounds if no default center is set
             if (!MapController.config.center_lat) {
@@ -253,37 +255,100 @@ const UIController = {
             return;
         }
 
-        list.innerHTML = drones.map(drone => {
-            const color = MapController.getDroneColor(drone.uas_id);
-            const altitude = drone.altitude !== null && drone.altitude !== undefined
-                ? `${drone.altitude.toFixed(0)}m`
-                : 'N/A';
+        // Group drones by date
+        const groups = {};
+        drones.forEach(drone => {
             const time = new Date(drone.timestamp);
-            const year = time.getFullYear();
-            const month = String(time.getMonth() + 1).padStart(2, '0');
-            const day = String(time.getDate()).padStart(2, '0');
-            const dateStr = `${year}-${month}-${day}`;
-            const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            const dateKey = `${time.getFullYear()}-${String(time.getMonth() + 1).padStart(2, '0')}-${String(time.getDate()).padStart(2, '0')}`;
+            if (!groups[dateKey]) {
+                groups[dateKey] = [];
+            }
+            groups[dateKey].push(drone);
+        });
 
-            const isSelected = this.selectedDrones.has(drone.uas_id);
+        const sortedDates = Object.keys(groups).sort().reverse();
 
-            return `
-                <div class="drone-item ${isSelected ? 'active' : ''}" data-uas-id="${drone.uas_id}">
-                    <div class="drone-color" style="background-color: ${color};"></div>
-                    <div class="drone-info">
-                        <div class="drone-id">${drone.uas_id}</div>
-                        <div class="drone-meta">Alt: ${altitude} | ${dateStr} ${timeStr}</div>
+        let html = '';
+        sortedDates.forEach(date => {
+            const droneCount = groups[date].length;
+            html += `
+                <div class="date-group">
+                    <div class="date-header">
+                        <span class="date-label">${date}</span>
+                        <span class="date-count">${droneCount} drone${droneCount !== 1 ? 's' : ''}</span>
+                        <i class="fas fa-chevron-right date-chevron"></i>
                     </div>
-                    <div class="drone-actions">
-                        <button class="focus-btn" title="Focus on map">
-                            <i class="fas fa-crosshairs"></i>
-                        </button>
+                    <div class="date-items collapsed">
+                        ${groups[date].map(drone => {
+                            const color = MapController.getDroneColor(drone.uas_id);
+                            const altitude = drone.altitude !== null && drone.altitude !== undefined
+                                ? `${drone.altitude.toFixed(0)}m`
+                                : 'N/A';
+                            const time = new Date(drone.timestamp);
+                            const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+                            const isSelected = this.selectedDrones.has(drone.uas_id);
+
+                            return `
+                                <div class="drone-item ${isSelected ? 'active' : ''}" data-uas-id="${drone.uas_id}">
+                                    <div class="drone-color" style="background-color: ${color};"></div>
+                                    <div class="drone-info">
+                                        <div class="drone-id">${drone.uas_id}</div>
+                                        <div class="drone-meta">Alt: ${altitude} | ${timeStr}</div>
+                                    </div>
+                                    <div class="drone-actions">
+                                        <button class="focus-btn" title="Focus on map">
+                                            <i class="fas fa-crosshairs"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
                     </div>
                 </div>
             `;
-        }).join('');
+        });
 
-        // Add click handlers
+        list.innerHTML = html;
+
+        // Add date header click handlers (toggle expand/collapse)
+        list.querySelectorAll('.date-header').forEach(header => {
+            header.addEventListener('click', async () => {
+                const group = header.closest('.date-group');
+                const items = group.querySelector('.date-items');
+                const chevron = header.querySelector('.date-chevron');
+
+                if (items.classList.contains('collapsed')) {
+                    items.classList.remove('collapsed');
+                    chevron.classList.remove('fa-chevron-right');
+                    chevron.classList.add('fa-chevron-down');
+
+                    // Load tracks for drones in this group
+                    const droneItems = items.querySelectorAll('.drone-item');
+                    const uasIds = Array.from(droneItems).map(di => di.dataset.uasId);
+                    for (const uasId of uasIds) {
+                        if (!this.loadedTracks.has(uasId)) {
+                            await MapController.loadTrack(uasId, this.currentStartTime, this.currentEndTime);
+                            this.loadedTracks.add(uasId);
+                        }
+                    }
+                } else {
+                    items.classList.add('collapsed');
+                    chevron.classList.remove('fa-chevron-down');
+                    chevron.classList.add('fa-chevron-right');
+
+                    // Remove tracks for drones in this group
+                    const droneItems = items.querySelectorAll('.drone-item');
+                    const uasIds = Array.from(droneItems).map(di => di.dataset.uasId);
+                    for (const uasId of uasIds) {
+                        MapController.removeTrack(uasId);
+                        this.loadedTracks.delete(uasId);
+                    }
+                }
+            });
+        });
+
+        // Add click handlers for drone items
         list.querySelectorAll('.drone-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 const uasId = item.dataset.uasId;
@@ -301,6 +366,12 @@ const UIController = {
 
                 // Focus on map
                 MapController.highlightDrone(uasId);
+
+                // Load track if not already loaded
+                if (!this.loadedTracks.has(uasId)) {
+                    MapController.loadTrack(uasId, this.currentStartTime, this.currentEndTime);
+                    this.loadedTracks.add(uasId);
+                }
 
                 // Close sidebar on mobile
                 if (window.innerWidth < 768) {

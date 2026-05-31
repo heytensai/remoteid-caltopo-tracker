@@ -86,13 +86,77 @@ html, body {
     padding: 8px;
 }
 
+.date-group {
+    margin-bottom: 4px;
+}
+
+.date-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    background: #2c3e50;
+    color: #ecf0f1;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.date-header:hover {
+    background: #34495e;
+}
+
+.date-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    flex: 1;
+}
+
+.date-count {
+    font-size: 0.75rem;
+    color: #bdc3c7;
+    margin-right: 8px;
+}
+
+.date-chevron {
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+}
+
+.date-items {
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.date-items.collapsed {
+    max-height: 0 !important;
+    padding-top: 0;
+    padding-bottom: 0;
+    visibility: hidden;
+}
+
+.date-items:not(.collapsed) {
+    max-height: 2000px;
+}
+
 .drone-item {
     display: flex;
     align-items: center;
-    padding: 12px;
-    margin-bottom: 8px;
+    padding: 10px 12px;
+    margin-bottom: 2px;
     background: #f8f9fa;
-    border-radius: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.date-items .drone-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px 10px 24px;
+    margin-bottom: 2px;
+    background: #f8f9fa;
+    border-radius: 6px;
     cursor: pointer;
     transition: background 0.2s;
 }
