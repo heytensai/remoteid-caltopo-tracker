@@ -44,8 +44,53 @@ def get_config():
             'default_zoom': config.map.default_zoom,
             'tile_provider': config.map.tile_provider
         },
-        'default_hours': config.default_hours
+        'default_hours': config.default_hours,
+        'sync_enabled': sync_manager is not None
     })
+
+
+@app.route('/api/sync/status', methods=['GET'])
+def get_sync_status():
+    """Get sync thread status"""
+    if sync_manager:
+        return jsonify({'enabled': True})
+    else:
+        return jsonify({'enabled': False})
+
+
+@app.route('/api/sync/status', methods=['POST'])
+def set_sync_status():
+    """Enable or disable sync thread"""
+    global sync_manager
+    data = request.get_json()
+    enabled = data.get('enabled', True)
+
+    if sync_manager:
+        if enabled:
+            sync_manager.start()
+        else:
+            sync_manager.stop()
+        return jsonify({'status': 'ok', 'enabled': enabled})
+    else:
+        return jsonify({'status': 'disabled', 'enabled': False}), 400
+
+
+@app.route('/api/sync/collectors')
+def get_collectors_status():
+    """Get status of all sync collectors"""
+    if sync_manager:
+        collectors_status = []
+        for collector in sync_manager.collectors:
+            last_sync = sync_manager._last_sync.get(collector.name)
+            collectors_status.append({
+                'name': collector.name,
+                'host': collector.host,
+                'path': collector.remote_db_path,
+                'last_sync': last_sync.strftime('%Y-%m-%d %H:%M') if last_sync else 'Never'
+            })
+        return jsonify({'collectors': collectors_status})
+    else:
+        return jsonify({'collectors': []})
 
 
 @app.route('/api/drones')

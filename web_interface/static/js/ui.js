@@ -51,6 +51,7 @@ const UIController = {
             detailOperatorId: document.getElementById('detailOperatorId'),
             detailOperatorPos: document.getElementById('detailOperatorPos'),
             refreshBtn: document.getElementById('refreshBtn'),
+            syncToggle: document.getElementById('syncToggle'),
             startTimeInput: document.getElementById('startTime'),
             endTimeInput: document.getElementById('endTime'),
             lastUpdateSpan: document.getElementById('lastUpdate'),
@@ -59,6 +60,7 @@ const UIController = {
             trackOpacitySlider: document.getElementById('trackOpacity'),
             timePresets: document.querySelectorAll('.header-time-presets button')
         };
+
     },
 
     /**
@@ -77,6 +79,11 @@ const UIController = {
         // Refresh button
         this.elements.refreshBtn.addEventListener('click', () => {
             this.refreshData();
+        });
+
+        // Sync toggle
+        this.elements.syncToggle.addEventListener('change', (e) => {
+            this._toggleSync(e.target.checked);
         });
 
         // Close detail panel
@@ -171,6 +178,14 @@ const UIController = {
 
             // Re-initialize time picker with correct default
             this._setTimeRange(this.defaultHours);
+
+            // Load sync status
+            if (config.sync_enabled) {
+                await this._loadSyncStatus();
+            }
+
+            // Update tooltip content
+
         } catch (e) {
             console.error('Failed to load config:', e);
         }
@@ -192,6 +207,30 @@ const UIController = {
         }
         if (this.elements.endTimeInput._flatpickr) {
             this.elements.endTimeInput._flatpickr.setDate(endTime);
+        }
+    },
+
+    /**
+     * Toggle sync thread on/off
+     */
+    async _toggleSync(enabled) {
+        try {
+            await API.setSyncStatus(enabled);
+        } catch (e) {
+            console.error('Failed to toggle sync:', e);
+            this.elements.syncToggle.checked = !enabled;
+        }
+    },
+
+    /**
+     * Load sync status from server
+     */
+    async _loadSyncStatus() {
+        try {
+            const status = await API.getSyncStatus();
+            this.elements.syncToggle.checked = status.enabled;
+        } catch (e) {
+            console.error('Failed to load sync status:', e);
         }
     },
 

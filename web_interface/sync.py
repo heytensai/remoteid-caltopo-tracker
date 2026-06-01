@@ -6,6 +6,7 @@ import threading
 import subprocess
 import tempfile
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -25,6 +26,7 @@ class SyncManager:
         self.sync_interval = sync_interval
         self._thread: threading.Thread = None
         self._stop_event = threading.Event()
+        self._last_sync: dict = {}
 
     def start(self):
         """Start the sync thread"""
@@ -62,6 +64,7 @@ class SyncManager:
         for collector in self.collectors:
             try:
                 self._sync_collector(collector)
+                self._last_sync[collector.name] = datetime.now()
             except Exception as e:
                 logger.error("Sync failed for %s: %s", collector.name, e)
 

@@ -349,6 +349,71 @@ html, body {
     margin-left: 12px;
 }
 
+.sync-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 12px;
+}
+
+.sync-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sync-toggle .switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+}
+
+.sync-toggle .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.sync-toggle .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.3);
+    transition: .4s;
+    border-radius: 22px;
+}
+
+.sync-toggle .slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+.sync-toggle input:checked + .slider {
+    background-color: rgba(40, 167, 69, 0.8);
+}
+
+.sync-toggle input:checked + .slider:before {
+    transform: translateX(18px);
+}
+
+.sync-toggle .sync-label {
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
 .header-time-inputs {
     display: flex;
     gap: 4px;

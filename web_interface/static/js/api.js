@@ -78,6 +78,27 @@ const API = {
     },
 
     /**
+     * Get sync status
+     */
+    async getSyncStatus() {
+        return this._get('/api/sync/status');
+    },
+
+    /**
+     * Set sync status
+     */
+    async setSyncStatus(enabled) {
+        return this._post('/api/sync/status', { enabled });
+    },
+
+    /**
+     * Get collectors status
+     */
+    async getCollectorsStatus() {
+        return this._get('/api/sync/collectors');
+    },
+
+    /**
      * Generic GET request with retry logic
      */
     async _get(url, retries = 2, delay = 500) {
