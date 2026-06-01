@@ -1,13 +1,12 @@
 """Background sync thread for pulling data from collectors"""
 
 import logging
-import time
-import threading
+import os
+import sqlite3
 import subprocess
 import tempfile
-import os
+import threading
 from datetime import datetime
-from pathlib import Path
 from typing import List, Optional
 
 from config import CollectorConfig
@@ -19,8 +18,12 @@ logger = logging.getLogger(__name__)
 class SyncManager:
     """Manages background syncing from remote collectors"""
 
-    def __init__(self, database: WebDatabase, collectors: List[CollectorConfig],
-                 sync_interval: int = 30):
+    def __init__(
+        self,
+        database: WebDatabase,
+        collectors: List[CollectorConfig],
+        sync_interval: int = 30,
+    ):
         self.database = database
         self.collectors = collectors
         self.sync_interval = sync_interval
@@ -65,8 +68,8 @@ class SyncManager:
             try:
                 self._sync_collector(collector)
                 self._last_sync[collector.name] = datetime.now()
-            except Exception as e:
-                logger.error("Sync failed for %s: %s", collector.name, e)
+            except (OSError, subprocess.SubprocessError, sqlite3.Error):
+                logger.exception("Sync failed for %s", collector.name)
 
     def _sync_collector(self, collector: CollectorConfig):
         """Sync from a single collector (rsync for remote, direct copy for local)"""
@@ -87,10 +90,12 @@ class SyncManager:
                 return
 
             # Import directly from local path
-            count = self.database.import_from_collector(collector.remote_db_path, collector.name)
+            count = self.database.import_from_collector(
+                collector.remote_db_path, collector.name
+            )
             logger.debug("Synced %d records from local %s", count, collector.name)
 
-        except Exception as e:
+        except (OSError, sqlite3.Error) as e:
             logger.error("Error syncing local %s: %s", collector.name, e)
 
     def _sync_remote_collector(self, collector: CollectorConfig):
@@ -98,25 +103,17 @@ class SyncManager:
         temp_path = None
         try:
             # Create temp file for incoming data
-            with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
                 temp_path = tmp.name
 
             # Build rsync command
             remote_path = f"{collector.host}:{collector.remote_db_path}"
-            cmd = [
-                'rsync', '-az', '--timeout=30',
-                remote_path, temp_path
-            ]
+            cmd = ["rsync", "-az", "--timeout=30", remote_path, temp_path]
 
-            logger.debug("Running: %s", ' '.join(cmd))
+            logger.debug("Running: %s", " ".join(cmd))
 
             # Run rsync
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
 
             if result.returncode != 0:
                 logger.error("Rsync failed: %s", result.stderr)
@@ -128,7 +125,7 @@ class SyncManager:
 
         except subprocess.TimeoutExpired:
             logger.error("Rsync timeout for %s", collector.name)
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError, sqlite3.Error) as e:
             logger.error("Error syncing %s: %s", collector.name, e)
         finally:
             # Always clean up temp file
@@ -142,9 +139,14 @@ class SyncManager:
         """Force an immediate sync (useful for manual refresh)"""
         self._sync_all()
 
+    def get_last_sync(self, collector_name: str) -> Optional[datetime]:
+        """Get the last sync time for a specific collector"""
+        return self._last_sync.get(collector_name)
 
-def create_sync_manager(database: WebDatabase, collectors: List[CollectorConfig],
-                       sync_interval: int) -> Optional[SyncManager]:
+
+def create_sync_manager(
+    database: WebDatabase, collectors: List[CollectorConfig], sync_interval: int
+) -> Optional[SyncManager]:
     """Factory function to create sync manager if collectors are configured"""
     if not collectors:
         logger.info("No collectors configured, sync disabled")
