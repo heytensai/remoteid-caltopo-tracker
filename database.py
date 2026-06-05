@@ -5,6 +5,7 @@ import sqlite3
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,85 @@ class RemoteIDDatabase:
             logger.debug("Stored record for UAS %s", uas_id)
         except sqlite3.Error as e:
             logger.error("Database error: %s", e)
+
+    def get_events_after(self, timestamp: datetime, limit: int = 200) -> List[Dict[str, Any]]:
+        """Get events after a given timestamp, ordered by timestamp.
+
+        Args:
+            timestamp: Get events after this timestamp (exclusive)
+            limit: Maximum number of events to return
+
+        Returns:
+            List of event dictionaries matching the API format
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    """SELECT timestamp, mac_address, uas_id, session_id,
+                              latitude, longitude, altitude,
+                              operator_id, operator_latitude, operator_longitude
+                       FROM remoteid
+                       WHERE timestamp > ?
+                       ORDER BY timestamp ASC
+                       LIMIT ?""",
+                    (timestamp, limit),
+                )
+                rows = cursor.fetchall()
+
+            events = []
+            for row in rows:
+                # Parse timestamp from ISO format string
+                ts_str = row["timestamp"]
+                if ts_str:
+                    if isinstance(ts_str, str):
+                        ts = datetime.fromisoformat(ts_str)
+                    else:
+                        ts = ts_str
+                    ts_iso = ts.isoformat()
+                else:
+                    ts_iso = None
+
+                event = {
+                    "timestamp": ts_iso,
+                    "mac_address": row["mac_address"],
+                    "uas_id": row["uas_id"],
+                    "session_id": row["session_id"],
+                    "latitude": row["latitude"],
+                    "longitude": row["longitude"],
+                    "altitude": row["altitude"],
+                    "operator_id": row["operator_id"],
+                    "operator_latitude": row["operator_latitude"],
+                    "operator_longitude": row["operator_longitude"],
+                }
+                # Remove None values to keep payload clean
+                event = {k: v for k, v in event.items() if v is not None}
+                events.append(event)
+
+            logger.debug("Retrieved %d events after %s", len(events), timestamp)
+            return events
+        except sqlite3.Error as e:
+            logger.error("Database error in get_events_after: %s", e)
+            return []
+
+    def get_max_timestamp(self) -> Optional[datetime]:
+        """Get the maximum timestamp in the database.
+
+        Returns:
+            The most recent timestamp, or None if no records exist
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("SELECT MAX(timestamp) FROM remoteid")
+                result = cursor.fetchone()
+                max_ts = result[0] if result else None
+                if max_ts:
+                    max_ts = datetime.fromisoformat(max_ts)
+                logger.debug("Max timestamp in database: %s", max_ts)
+                return max_ts
+        except sqlite3.Error as e:
+            logger.error("Database error in get_max_timestamp: %s", e)
+            return None
 
     def close(self):
         """Close database connections (no-op for sqlite3 context manager pattern)"""

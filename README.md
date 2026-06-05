@@ -6,7 +6,7 @@ This was developed to support drone tracking for search and rescue operations, b
 
 ## Overview
 
-Remote ID is a broadcast system that transmits identification and location information from UASes (aka drones). This tool captures those broadcasts and forwards the position data to CalTopo, enabling real-time tracking of multiple drones on a shared map.
+Remote ID is a broadcast system that transmits identification and location information from UASes (aka drones). This tool captures those broadcasts and forwards the position data to CalTopo, enabling real-time tracking of multiple drones on a shared map. Optionally, data can be stored locally in SQLite and/or synced to remote servers via HTTP API.
 
 ## Features
 
@@ -14,6 +14,7 @@ Remote ID is a broadcast system that transmits identification and location infor
 - **PCAP Replay**: Replay and analyze previously captured Remote ID packets from PCAP files
 - **CalTopo Integration**: Send position updates directly to CalTopo maps
 - **SQLite Database Storage**: Optionally store all Remote ID data locally for analysis and record-keeping
+- **Remote API Client**: Automatically sync data to remote servers via HTTP API
 - **Ignore List**: Filter out specific UAS IDs from reporting
 - **Allow List**: Allow only specific UAS IDs to be monitored
 - **Alias Mapping**: Map UAS IDs to custom display names
@@ -88,6 +89,18 @@ alias:
 # Optional: SQLite database path for storing Remote ID data
 # If not specified, no database will be used
 database: '/path/to/remoteid.db'
+
+# Optional: Configure remote API clients to sync data to external servers
+# Requires the 'database' option to be enabled
+api_clients:
+  - url: "http://remote-server.example.com"
+    api_key: "your-api-key-here"
+    interval: 60      # seconds between sync attempts (default: 60)
+    batch_size: 200   # events per request (default: 200)
+  - url: "http://backup-server.example.com"
+    api_key: "backup-api-key"
+    interval: 300
+    batch_size: 500
 ```
 
 ### Database Storage
@@ -99,6 +112,43 @@ The application can optionally store all received Remote ID data to a SQLite dat
 - Debugging and troubleshooting
 
 To enable database storage, add the `database` option to your `config.yaml` with the path to your database file. The database and table will be created automatically if they don't exist.
+
+### Remote API Client
+
+The application can automatically sync captured Remote ID data to one or more remote servers via HTTP API. This is useful for:
+- Centralized data collection from multiple collection nodes
+- Backup/redundancy across multiple servers
+- Feeding data into external analysis systems
+
+**Requirements:**
+- Database storage must be enabled (`database` option in config)
+- Remote server must implement the [Remote ID Client API](CLIENT_API.md)
+
+**Configuration:**
+
+Add an `api_clients` list to your `config.yaml`. Each client needs:
+- `url` - Base URL of the remote server
+- `api_key` - Bearer token for authentication
+- `interval` - (optional) Seconds between sync attempts (default: 60)
+- `batch_size` - (optional) Events per request (default: 200)
+
+```yaml
+api_clients:
+  - url: "http://remote-server.example.com"
+    api_key: "your-api-key-here"
+    interval: 60      # seconds between sync attempts
+    batch_size: 200   # events per request
+```
+
+**How it works:**
+
+1. On startup, each API client queries the remote server's `/api/last-timestamp` endpoint to determine where to resume from
+2. Every `interval` seconds, the client queries the local database for records newer than the last sent timestamp
+3. Records are sent in batches of `batch_size` to the remote server's `/api/submit` endpoint
+4. On any error (network down, server error, etc.), the client logs the error and retries on the next interval
+5. Multiple servers can be configured - each runs independently in its own thread
+
+**Resume capability:** If the application is stopped and restarted, it will automatically resume sending from where it left off by checking the remote server's last received timestamp.
 
 **Database Schema:**
 
