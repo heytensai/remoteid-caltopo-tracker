@@ -55,6 +55,15 @@ class RemoteIDDatabase:
             """
             )
             conn.commit()
+
+            # Migrate: Add session_id column if it doesn't exist
+            cursor = conn.execute("PRAGMA table_info(remoteid)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "session_id" not in columns:
+                conn.execute("ALTER TABLE remoteid ADD COLUMN session_id TEXT")
+                conn.commit()
+                logger.info("Added session_id column to existing database")
+
         logger.debug("Database initialized at %s", self.db_path)
 
     # pylint: disable=too-many-arguments
@@ -98,7 +107,9 @@ class RemoteIDDatabase:
         except sqlite3.Error as e:
             logger.error("Database error: %s", e)
 
-    def get_events_after(self, timestamp: datetime, limit: int = 200) -> List[Dict[str, Any]]:
+    def get_events_after(
+        self, timestamp: datetime, limit: int = 200
+    ) -> List[Dict[str, Any]]:
         """Get events after a given timestamp, ordered by timestamp.
 
         Args:
