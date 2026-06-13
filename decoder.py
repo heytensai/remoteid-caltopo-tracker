@@ -84,12 +84,17 @@ class UAS:  # pylint: disable=too-many-instance-attributes
         """Check whether all fields have been populated. This is necessary
         because data is spread across multiple Remote ID packets, so won't
         all be received at the same time.
+        Also ignore events where latitude or longitude is zero.
         """
         if self.id is None:
             return False
         if self.lat is None:
             return False
         if self.lon is None:
+            return False
+        if self.lat == 0:
+            return False
+        if self.lon == 0:
             return False
         return True
 
