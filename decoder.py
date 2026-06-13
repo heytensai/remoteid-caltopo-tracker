@@ -5,11 +5,13 @@
 import argparse
 from dataclasses import dataclass, field
 from datetime import datetime
-import time
 import logging
 import signal
+import sqlite3
 import sys
 import threading
+import time
+from typing import Optional
 
 import yaml
 import requests
@@ -21,6 +23,193 @@ from uas_remoteid.common.wifi import parse_dot11
 from database import RemoteIDDatabase
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ApiClientConfig:
+    """Configuration for an API client endpoint"""
+
+    url: str
+    api_key: str
+    interval: int = 60  # seconds between checks
+    batch_size: int = 200  # events per request
+
+    def __init__(self, config_dict: dict):
+        """Initialize from a configuration dictionary"""
+        if "url" not in config_dict:
+            raise ValueError("API client config missing required field: 'url'")
+        if "api_key" not in config_dict:
+            raise ValueError("API client config missing required field: 'api_key'")
+
+        self.url = config_dict["url"].rstrip("/")
+        self.api_key = config_dict["api_key"]
+        self.interval = int(config_dict.get("interval", 60))
+        self.batch_size = int(config_dict.get("batch_size", 200))
+
+
+class ApiClientThread(threading.Thread):
+    """Background thread that periodically sends data to a remote API server.
+
+    This thread:
+    - Queries the remote server for the last timestamp on startup
+    - Periodically checks the local database for new records
+    - Sends records in batches to the remote server
+    - Retries immediately on any error (no backoff)
+    """
+
+    def __init__(
+        self,
+        config: ApiClientConfig,
+        database: RemoteIDDatabase,
+        stop_event: threading.Event,
+    ):
+        super().__init__(name=f"ApiClient-{config.url}", daemon=True)
+        self.config = config
+        self.database = database
+        self.stop_event = stop_event
+        self.last_timestamp: Optional[datetime] = None
+        self.headers = {
+            "Authorization": f"Bearer {config.api_key}",
+            "Content-Type": "application/json",
+        }
+        self._running = True
+
+    def _get_remote_last_timestamp(self) -> Optional[datetime]:
+        """Query the remote server for the most recent timestamp"""
+        try:
+            url = f"{self.config.url}/api/last-timestamp"
+            response = requests.get(url, headers=self.headers, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("last_timestamp"):
+                ts = datetime.fromisoformat(data["last_timestamp"])
+                logger.info(
+                    "API client for %s: remote last timestamp is %s",
+                    self.config.url,
+                    ts,
+                )
+                return ts
+            logger.info(
+                "API client for %s: no data on remote server, starting from beginning",
+                self.config.url,
+            )
+            return None
+        except RequestException as e:
+            logger.warning(
+                "API client for %s: failed to get remote timestamp: %s. Will retry.",
+                self.config.url,
+                e,
+            )
+            return None
+
+    def _send_batch(self, events: list[dict]) -> bool:
+        """Send a batch of events to the remote server.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not events:
+            return True
+
+        try:
+            url = f"{self.config.url}/api/submit"
+            response = requests.post(
+                url, headers=self.headers, json=events, timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            if result.get("errors"):
+                logger.warning(
+                    "API client for %s: batch had %d validation errors",
+                    self.config.url,
+                    len(result["errors"]),
+                )
+                for error in result["errors"]:
+                    logger.debug(
+                        "  Index %d: %s", error.get("index"), error.get("reason")
+                    )
+
+            inserted = result.get("inserted", 0)
+            logger.debug(
+                "API client for %s: sent %d events, inserted %d",
+                self.config.url,
+                len(events),
+                inserted,
+            )
+
+            # Update last timestamp from response if available
+            if result.get("last_timestamp"):
+                self.last_timestamp = datetime.fromisoformat(result["last_timestamp"])
+
+            return True
+
+        except RequestException as e:
+            logger.warning(
+                "API client for %s: failed to send batch: %s. Will retry.",
+                self.config.url,
+                e,
+            )
+            return False
+
+    def _sync_once(self) -> None:
+        """Perform one sync cycle: get pending events and send them"""
+        if self.last_timestamp is None:
+            # First run - check remote server for resume point
+            self.last_timestamp = self._get_remote_last_timestamp()
+            if self.last_timestamp is None:
+                # No remote timestamp, check local database for minimum
+                self.last_timestamp = datetime.min
+
+        # Get pending events from database
+        events = self.database.get_events_after(
+            self.last_timestamp, limit=self.config.batch_size
+        )
+
+        if not events:
+            logger.debug(
+                "API client for %s: no pending events", self.config.url
+            )
+            return
+
+        # Send the batch
+        if self._send_batch(events):
+            logger.info(
+                "API client for %s: successfully sent %d events",
+                self.config.url,
+                len(events),
+            )
+        # If failed, we'll retry on next wake-up
+
+    def run(self) -> None:
+        """Main thread loop"""
+        logger.info(
+            "API client thread started for %s (interval=%ds, batch_size=%d)",
+            self.config.url,
+            self.config.interval,
+            self.config.batch_size,
+        )
+
+        while not self.stop_event.is_set():
+            try:
+                self._sync_once()
+            except (RequestException, sqlite3.Error, ValueError) as e:
+                logger.error(
+                    "API client for %s: error during sync: %s",
+                    self.config.url,
+                    e,
+                )
+
+            # Wait for next interval or until stopped
+            self.stop_event.wait(self.config.interval)
+
+        logger.info("API client thread stopped for %s", self.config.url)
+
+    def stop(self) -> None:
+        """Signal the thread to stop"""
+        self._running = False
+        self.stop_event.set()
 
 
 @dataclass
@@ -63,6 +252,22 @@ class ServerConfig:  # pylint: disable=too-many-instance-attributes
         self.alias_map = yaml_data.get("alias", {})
         self.bpf_filter = yaml_data.get("filter", "type mgt")
         self.database = yaml_data.get("database")
+
+        # Parse API client configurations
+        self.api_clients: list[ApiClientConfig] = []
+        api_clients_data = yaml_data.get("api_clients", [])
+        for client_config in api_clients_data:
+            try:
+                self.api_clients.append(ApiClientConfig(client_config))
+            except ValueError as e:
+                logger.warning("Skipping invalid API client config: %s", e)
+
+        if self.api_clients:
+            logger.info(
+                "Configured %d API client(s): %s",
+                len(self.api_clients),
+                ", ".join(c.url for c in self.api_clients),
+            )
 
 
 @dataclass
@@ -153,7 +358,7 @@ class Stats:
 
 
 @dataclass
-class Server:
+class Server:  # pylint: disable=too-many-instance-attributes
     """Handles UAS Remote ID packet processing and CalTopo reporting."""
 
     url_prefix: str
@@ -163,6 +368,8 @@ class Server:
     database: RemoteIDDatabase = None
     stats: Stats = None
     stats_timer: threading.Timer = None
+    api_client_threads: list[ApiClientThread] = None
+    api_client_stop_event: threading.Event = None
 
     def report(self, uas):
         """Upload data to CalTopo and store in database"""
@@ -347,6 +554,16 @@ class Server:
         if self.stats_timer:
             self.stats_timer.cancel()
 
+    def stop_api_clients(self):
+        """Stop all API client threads"""
+        if self.api_client_stop_event:
+            logger.info("Stopping API client threads...")
+            self.api_client_stop_event.set()
+            for thread in self.api_client_threads:
+                thread.join(timeout=5.0)
+                if thread.is_alive():
+                    logger.warning("API client thread %s did not stop gracefully", thread.name)
+
     def __init__(self, config: ServerConfig, noop: bool = False):
         self.config = config
         self.url_prefix = self.config.caltopo_url
@@ -364,10 +581,27 @@ class Server:
         if self.config.database:
             self.database = RemoteIDDatabase(self.config.database)
 
+        # Start API client threads if configured and database is available
+        self.api_client_threads = []
+        self.api_client_stop_event = threading.Event()
+        if self.config.api_clients and self.database:
+            for client_config in self.config.api_clients:
+                thread = ApiClientThread(
+                    client_config, self.database, self.api_client_stop_event
+                )
+                thread.start()
+                self.api_client_threads.append(thread)
+        elif self.config.api_clients and not self.database:
+            logger.warning(
+                "API clients configured but no database enabled. "
+                "Add 'database' to config to enable API client functionality."
+            )
+
 
 def signal_handler(signum, frame):  # pylint: disable=unused-argument
     """Catch system signals"""
     logger.info("Shutting down...")
+    # Note: API clients will be stopped by the finally block in main
     sys.exit(0)
 
 
@@ -415,3 +649,4 @@ if __name__ == "__main__":
             pass
         finally:
             serv.stop_stats_timer()
+            serv.stop_api_clients()
