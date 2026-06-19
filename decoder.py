@@ -114,9 +114,7 @@ class ApiClientThread(threading.Thread):
 
         try:
             url = f"{self.config.url}/api/submit"
-            response = requests.post(
-                url, headers=self.headers, json=events, timeout=30
-            )
+            response = requests.post(url, headers=self.headers, json=events, timeout=30)
             response.raise_for_status()
             result = response.json()
 
@@ -168,9 +166,7 @@ class ApiClientThread(threading.Thread):
         )
 
         if not events:
-            logger.debug(
-                "API client for %s: no pending events", self.config.url
-            )
+            logger.debug("API client for %s: no pending events", self.config.url)
             return
 
         # Send the batch
@@ -280,6 +276,8 @@ class UAS:  # pylint: disable=too-many-instance-attributes
     session_id: str = None
     mac_address: str = None
     altitude: float = None
+    height: float = None
+    height_type: int = None
     timestamp: datetime = field(default_factory=datetime.now)
     operator_id: str = None
     operator_lat: float = None
@@ -394,6 +392,8 @@ class Server:  # pylint: disable=too-many-instance-attributes
                 latitude=float(uas.lat),
                 longitude=float(uas.lon),
                 altitude=uas.get_altitude(),
+                height=uas.height,
+                height_type=uas.height_type,
                 operator_id=uas.operator_id,
                 operator_latitude=(
                     float(uas.operator_lat) if uas.operator_lat is not None else None
@@ -514,6 +514,8 @@ class Server:  # pylint: disable=too-many-instance-attributes
                     if alt is None:
                         alt = getattr(d, "altitudeBaro", None)
                     uas.altitude = alt
+                    uas.height = getattr(d, "height", None)
+                    uas.height_type = getattr(d, "heightType", None)
                 elif msg_type == 4:
                     uas.operator_lat = d.operatorLatitude
                     uas.operator_lon = d.operatorLongitude
@@ -562,7 +564,9 @@ class Server:  # pylint: disable=too-many-instance-attributes
             for thread in self.api_client_threads:
                 thread.join(timeout=5.0)
                 if thread.is_alive():
-                    logger.warning("API client thread %s did not stop gracefully", thread.name)
+                    logger.warning(
+                        "API client thread %s did not stop gracefully", thread.name
+                    )
 
     def __init__(self, config: ServerConfig, noop: bool = False):
         self.config = config
