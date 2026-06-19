@@ -179,6 +179,8 @@ def query_database(
                 "latitude": row["latitude"],
                 "longitude": row["longitude"],
                 "altitude": row["altitude"],
+                "height": row["height"],
+                "height_type": row["height_type"],
                 "uas_id": row["uas_id"],
                 "session_id": row["session_id"] if "session_id" in row.keys() else None,
                 "mac_address": row["mac_address"],

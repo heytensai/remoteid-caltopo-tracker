@@ -48,6 +48,8 @@ class RemoteIDDatabase:
                     latitude REAL,
                     longitude REAL,
                     altitude REAL,
+                    height REAL,
+                    height_type INTEGER,
                     operator_id TEXT,
                     operator_latitude REAL,
                     operator_longitude REAL
@@ -64,6 +66,16 @@ class RemoteIDDatabase:
                 conn.commit()
                 logger.info("Added session_id column to existing database")
 
+            if "height" not in columns:
+                conn.execute("ALTER TABLE remoteid ADD COLUMN height REAL")
+                conn.commit()
+                logger.info("Added height column to existing database")
+
+            if "height_type" not in columns:
+                conn.execute("ALTER TABLE remoteid ADD COLUMN height_type INTEGER")
+                conn.commit()
+                logger.info("Added height_type column to existing database")
+
         logger.debug("Database initialized at %s", self.db_path)
 
     # pylint: disable=too-many-arguments
@@ -76,6 +88,8 @@ class RemoteIDDatabase:
         latitude: float,
         longitude: float,
         altitude: float,
+        height: float = None,
+        height_type: int = None,
         operator_id: str = None,
         operator_latitude: float = None,
         operator_longitude: float = None,
@@ -87,8 +101,9 @@ class RemoteIDDatabase:
                 conn.execute(
                     """INSERT INTO remoteid
                        (timestamp, mac_address, uas_id, session_id, latitude, longitude, altitude,
+                        height, height_type,
                         operator_id, operator_latitude, operator_longitude)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         timestamp,
                         mac_address,
@@ -97,6 +112,8 @@ class RemoteIDDatabase:
                         latitude,
                         longitude,
                         altitude,
+                        height,
+                        height_type,
                         operator_id,
                         operator_latitude,
                         operator_longitude,
@@ -125,6 +142,7 @@ class RemoteIDDatabase:
                 cursor = conn.execute(
                     """SELECT timestamp, mac_address, uas_id, session_id,
                               latitude, longitude, altitude,
+                              height, height_type,
                               operator_id, operator_latitude, operator_longitude
                        FROM remoteid
                        WHERE timestamp > ?
@@ -155,6 +173,8 @@ class RemoteIDDatabase:
                     "latitude": row["latitude"],
                     "longitude": row["longitude"],
                     "altitude": row["altitude"],
+                    "height": row["height"],
+                    "height_type": row["height_type"],
                     "operator_id": row["operator_id"],
                     "operator_latitude": row["operator_latitude"],
                     "operator_longitude": row["operator_longitude"],
