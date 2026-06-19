@@ -151,6 +151,24 @@ class ApiClientThread(threading.Thread):
             )
             return False
 
+    def _send_ping(self) -> bool:
+        """Send a lightweight heartbeat to the remote server.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            url = f"{self.config.url}/api/submit/ping"
+            response = requests.get(url, headers=self.headers, timeout=30)
+            response.raise_for_status()
+            logger.debug("API client for %s: ping successful", self.config.url)
+            return True
+        except RequestException as e:
+            logger.warning(
+                "API client for %s: ping failed: %s", self.config.url, e
+            )
+            return False
+
     def _sync_once(self) -> None:
         """Perform one sync cycle: get pending events and send them"""
         if self.last_timestamp is None:
@@ -167,6 +185,7 @@ class ApiClientThread(threading.Thread):
 
         if not events:
             logger.debug("API client for %s: no pending events", self.config.url)
+            self._send_ping()
             return
 
         # Send the batch
