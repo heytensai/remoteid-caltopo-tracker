@@ -3,7 +3,7 @@
 
 import sqlite3
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -11,13 +11,21 @@ logger = logging.getLogger(__name__)
 
 
 def _adapt_datetime(dt: datetime) -> str:
-    """Adapt datetime to ISO format string for SQLite"""
+    """Adapt datetime to ISO format string for SQLite (always UTC)"""
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc)
     return dt.isoformat()
 
 
 def _convert_datetime(s: bytes) -> datetime:
-    """Convert ISO format string from SQLite to datetime"""
-    return datetime.fromisoformat(s.decode())
+    """Convert ISO format string from SQLite to datetime (always UTC)"""
+    s = s.decode()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 # Register adapters for datetime handling
@@ -36,7 +44,7 @@ class RemoteIDDatabase:
         """Initialize the database schema"""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS remoteid(
@@ -97,7 +105,7 @@ class RemoteIDDatabase:
     ):
         """Store a Remote ID record in the database"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES) as conn:
                 conn.execute(
                     """INSERT INTO remoteid
                        (timestamp, mac_address, uas_id, session_id, latitude, longitude, altitude,
@@ -137,7 +145,7 @@ class RemoteIDDatabase:
             List of event dictionaries matching the API format
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     """SELECT timestamp, mac_address, uas_id, session_id,
@@ -154,16 +162,8 @@ class RemoteIDDatabase:
 
             events = []
             for row in rows:
-                # Parse timestamp from ISO format string
-                ts_str = row["timestamp"]
-                if ts_str:
-                    if isinstance(ts_str, str):
-                        ts = datetime.fromisoformat(ts_str)
-                    else:
-                        ts = ts_str
-                    ts_iso = ts.isoformat()
-                else:
-                    ts_iso = None
+                ts = row["timestamp"]
+                ts_iso = ts.isoformat() if ts else None
 
                 event = {
                     "timestamp": ts_iso,
@@ -196,12 +196,10 @@ class RemoteIDDatabase:
             The most recent timestamp, or None if no records exist
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES) as conn:
                 cursor = conn.execute("SELECT MAX(timestamp) FROM remoteid")
                 result = cursor.fetchone()
                 max_ts = result[0] if result else None
-                if max_ts:
-                    max_ts = datetime.fromisoformat(max_ts)
                 logger.debug("Max timestamp in database: %s", max_ts)
                 return max_ts
         except sqlite3.Error as e:

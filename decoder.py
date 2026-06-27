@@ -4,7 +4,7 @@
 
 import argparse
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import signal
 import sqlite3
@@ -83,7 +83,7 @@ class ApiClientThread(threading.Thread):
             data = response.json()
 
             if data.get("last_timestamp"):
-                ts = datetime.fromisoformat(data["last_timestamp"])
+                ts = datetime.fromisoformat(data["last_timestamp"].replace("Z", "+00:00"))
                 logger.info(
                     "API client for %s: remote last timestamp is %s",
                     self.config.url,
@@ -139,7 +139,7 @@ class ApiClientThread(threading.Thread):
 
             # Update last timestamp from response if available
             if result.get("last_timestamp"):
-                self.last_timestamp = datetime.fromisoformat(result["last_timestamp"])
+                self.last_timestamp = datetime.fromisoformat(result["last_timestamp"].replace("Z", "+00:00"))
 
             return True
 
@@ -176,7 +176,7 @@ class ApiClientThread(threading.Thread):
             self.last_timestamp = self._get_remote_last_timestamp()
             if self.last_timestamp is None:
                 # No remote timestamp, check local database for minimum
-                self.last_timestamp = datetime.min
+                self.last_timestamp = datetime.min.replace(tzinfo=timezone.utc)
 
         # Get pending events from database
         events = self.database.get_events_after(
@@ -297,7 +297,7 @@ class UAS:  # pylint: disable=too-many-instance-attributes
     altitude: float = None
     height: float = None
     height_type: int = None
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     operator_id: str = None
     operator_lat: float = None
     operator_lon: float = None
