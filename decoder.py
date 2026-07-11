@@ -129,16 +129,25 @@ class ApiClientThread(threading.Thread):
                         "  Index %d: %s", error.get("index"), error.get("reason")
                     )
 
-            inserted = result.get("inserted", 0)
+            inserted = result.get("inserted")
             logger.debug(
-                "API client for %s: sent %d events, inserted %d",
+                "API client for %s: sent %d events, inserted %s",
                 self.config.url,
                 len(events),
                 inserted,
             )
 
-            # Update last timestamp from response if available
-            if result.get("last_timestamp"):
+            # Only advance last_timestamp if all records were inserted
+            # If server doesn't report inserted count, trust the timestamp
+            if inserted is not None and inserted < len(events):
+                logger.warning(
+                    "API client for %s: %d/%d records inserted - "
+                    "not advancing timestamp to avoid dropping records",
+                    self.config.url,
+                    inserted,
+                    len(events),
+                )
+            elif result.get("last_timestamp"):
                 self.last_timestamp = datetime.fromisoformat(result["last_timestamp"].replace("Z", "+00:00"))
 
             return True

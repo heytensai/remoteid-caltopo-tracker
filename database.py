@@ -24,7 +24,7 @@ def _convert_datetime(s: bytes) -> datetime:
         s = s[:-1] + "+00:00"
     dt = datetime.fromisoformat(s)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.astimezone(timezone.utc)
     return dt
 
 
@@ -83,6 +83,27 @@ class RemoteIDDatabase:
                 conn.execute("ALTER TABLE remoteid ADD COLUMN height_type INTEGER")
                 conn.commit()
                 logger.info("Added height_type column to existing database")
+
+            # Migrate: Convert naive timestamps to UTC
+            raw_conn = sqlite3.connect(self.db_path)
+            cursor = raw_conn.execute(
+                "SELECT id, timestamp FROM remoteid WHERE timestamp NOT LIKE '%+%' AND timestamp NOT LIKE '%Z%'"
+            )
+            naive_rows = cursor.fetchall()
+            if naive_rows:
+                migrated = 0
+                for row_id, ts_str in naive_rows:
+                    if ts_str:
+                        naive_dt = datetime.fromisoformat(ts_str)
+                        utc_dt = naive_dt.astimezone(timezone.utc)
+                        raw_conn.execute(
+                            "UPDATE remoteid SET timestamp = ? WHERE id = ?",
+                            (utc_dt.isoformat(), row_id),
+                        )
+                        migrated += 1
+                raw_conn.commit()
+                logger.info("Migrated %d naive timestamps to UTC", migrated)
+            raw_conn.close()
 
         logger.debug("Database initialized at %s", self.db_path)
 
