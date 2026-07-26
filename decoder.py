@@ -138,17 +138,8 @@ class ApiClientThread(threading.Thread):
                 inserted,
             )
 
-            # Only advance last_timestamp if all records were inserted
-            # If server doesn't report inserted count, trust the timestamp
-            if inserted is not None and inserted < len(events):
-                logger.warning(
-                    "API client for %s: %d/%d records inserted - "
-                    "not advancing timestamp to avoid dropping records",
-                    self.config.url,
-                    inserted,
-                    len(events),
-                )
-            elif result.get("last_timestamp"):
+            # Always advance last_timestamp if server provides one
+            if result.get("last_timestamp"):
                 self.last_timestamp = datetime.fromisoformat(result["last_timestamp"].replace("Z", "+00:00"))
 
             return True
