@@ -1,7 +1,11 @@
 rate_limit: 5
 logging: 'INFO'
 caltopo_url: 'https://caltopo.com/api/v1/position/report/<your_key_here>'
-filter: "type mgt subtype action"
+# BPF filter for WiFi capture. Filters at the kernel level for performance.
+# Must match both beacons (subtype 8, used by Autel/DJI/Skydio) and
+# action frames (subtype 13, used by WiFi NaN). If compilation fails,
+# the decoder will exit — make sure the interface is in monitor mode.
+filter: "type mgt subtype beacon or type mgt subtype action"
 #database: 'archive.db'
 ignore:
   - "<your_uas_id_here>"
@@ -13,6 +17,11 @@ ignore:
 # map UAS IDs to custom display names
 #alias:
 #  "<original_uas_id>": "<custom_name>"
+
+# Attempt to correct negative altitude values from Autel drones
+# that misencode signed altitudes as unsigned. Takes absolute value
+# of implausibly high readings. Default: true.
+#fix_negative_altitude: true
 
 # Configure API clients to submit data to remote servers
 # The database option must also be enabled for this to work

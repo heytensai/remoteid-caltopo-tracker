@@ -119,5 +119,8 @@ def parse_dot11(dot11: Dot11) -> Generator[OpenDroneIDPacket, None, None]:
                     yield DJIPacket(packet.info[3:])
                 elif packet.oui == 0x6a5c35 and packet.info[3] == 0x01:
                     yield SGDSNPacket(packet.info[3:])
+                elif packet.oui == 0xec5bcd:
+                    # Autel: try to decode as standard OpenDroneID
+                    yield OpenDroneIDPacket(packet.info[3:])
 
             packet = packet.payload.getlayer(Dot11EltVendorSpecific)
