@@ -3,7 +3,6 @@
 """
 
 import argparse
-import struct
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import logging
@@ -241,7 +240,6 @@ class ServerConfig:  # pylint: disable=too-many-instance-attributes
     logging_level: int
     bpf_filter: str
     database: str = None
-    fix_negative_altitude: bool = True
 
     def __init__(self, yaml_file: str):
         with open(yaml_file, encoding="utf-8") as fh:
@@ -269,7 +267,6 @@ class ServerConfig:  # pylint: disable=too-many-instance-attributes
         self.alias_map = yaml_data.get("alias", {})
         self.bpf_filter = yaml_data.get("filter", "type mgt")
         self.database = yaml_data.get("database")
-        self.fix_negative_altitude = yaml_data.get("fix_negative_altitude", True)
 
         # Parse API client configurations
         self.api_clients: list[ApiClientConfig] = []
@@ -488,45 +485,6 @@ class Server:  # pylint: disable=too-many-instance-attributes
     # Autel OUI (IEEE-registered EC:5B:CD:E prefix)
     _AUTEL_OUI = b"\xec\x5b\xcd"
 
-    # Altitude is encoded as unsigned LE 16-bit: altitude_m = value * 0.5 - 1000
-    # Raw values above this threshold are likely misencoded negative altitudes.
-    _ALTITUDE_RAW_THRESHOLD = 50000  # ~24000m, well above consumer drone ceiling
-
-    @staticmethod
-    def _correct_negative_altitude(
-        altitude: float, raw_msg: bytes
-    ) -> tuple[float, bool]:
-        """Detect and correct misencoded negative altitude values.
-
-        Some Autel firmware variants encode negative altitudes as unsigned
-        two's complement instead of using the spec's offset formula. This
-        results in implausibly high altitude readings.
-
-        The spec formula is: altitude_m = raw_value * 0.5 - 1000
-        where raw_value is unsigned LE 16-bit (0-65535).
-
-        Returns:
-            (corrected_altitude, was_corrected)
-        """
-        if len(raw_msg) < 18:
-            return altitude, False
-
-        raw_baro = struct.unpack_from("<H", raw_msg, 12)[0]
-        raw_geo = struct.unpack_from("<H", raw_msg, 14)[0]
-
-        raw_value = raw_geo if raw_geo != 0xFFFF else raw_baro
-        if raw_value == 0xFFFF or raw_value <= Server._ALTITUDE_RAW_THRESHOLD:
-            return altitude, False
-
-        signed_value = struct.unpack("<h", struct.pack("<H", raw_value))[0]
-        corrected = abs(signed_value * 0.5 - 1000.0)
-        logger.warning(
-            "Likely Autel negative altitude corrected: raw=%d → %dm",
-            raw_value,
-            int(corrected),
-        )
-        return corrected, True
-
     def _has_remoteid_signature(self, packet: Dot11) -> bool:
         """Fast check for Remote ID signatures in raw packet bytes.
         Checks for NAN service ID, legacy beacon, or Autel OUI.
@@ -578,10 +536,6 @@ class Server:  # pylint: disable=too-many-instance-attributes
                     alt = getattr(d, "altitudeGeo", None)
                     if alt is None:
                         alt = getattr(d, "altitudeBaro", None)
-                    # Correct negative altitude misencoding (Autel firmware issue)
-                    if self.config.fix_negative_altitude and alt is not None:
-                        raw_msg = bytes(d)
-                        alt, _ = self._correct_negative_altitude(alt, raw_msg)
                     uas.altitude = alt
                     uas.height = getattr(d, "height", None)
                     uas.height_type = getattr(d, "heightType", None)

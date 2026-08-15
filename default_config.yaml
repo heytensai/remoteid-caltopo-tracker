@@ -18,11 +18,6 @@ ignore:
 #alias:
 #  "<original_uas_id>": "<custom_name>"
 
-# Attempt to correct negative altitude values from Autel drones
-# that misencode signed altitudes as unsigned. Takes absolute value
-# of implausibly high readings. Default: true.
-#fix_negative_altitude: true
-
 # Configure API clients to submit data to remote servers
 # The database option must also be enabled for this to work
 #api_clients:
