@@ -23,12 +23,12 @@ fi
 
 /usr/sbin/iwconfig "${INT}" | grep -qi monitor || {
 	echo "${d} ${INT} set monitor mode"
-	ip link set dev "${INT}" down
-	iwconfig "${INT}" mode monitor
-	ip link set dev "${INT}" up
+	/usr/bin/ip link set dev "${INT}" down
+	/usr/bin/iwconfig "${INT}" mode monitor
+	/usr/bin/ip link set dev "${INT}" up
 }
 
 /usr/sbin/iwconfig "${INT}" | grep -qi "${FREQ}" || {
 	echo "${d} ${INT} set channel ${CHAN}"
-	iw dev "${INT}" set channel ${CHAN}
+	/usr/bin/iw dev "${INT}" set channel ${CHAN}
 }
