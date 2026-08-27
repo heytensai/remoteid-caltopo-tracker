@@ -1,6 +1,7 @@
 #!/bin/bash
 
 d=$(date -R)
+
 INT="${1}"
 if [ "${INT}" = "" ]
 then
@@ -8,14 +9,26 @@ then
 	exit 1
 fi
 
-iwconfig "${INT}" | grep -qi monitor || {
+FREQ="${2}"
+if [ "${FREQ}" = "" ]
+then
+	FREQ="2.437"
+fi
+
+CHAN="${3}"
+if [ "${CHAN}" = "" ]
+then
+	CHAN="6"
+fi
+
+/usr/sbin/iwconfig "${INT}" | grep -qi monitor || {
 	echo "${d} ${INT} set monitor mode"
 	ip link set dev "${INT}" down
 	iwconfig "${INT}" mode monitor
 	ip link set dev "${INT}" up
 }
 
-iwconfig "${INT}" | grep -qi 2.437 || {
-	echo "${d} ${INT} set channel 6"
-	iw dev "${INT}" set channel 6
+/usr/sbin/iwconfig "${INT}" | grep -qi "${FREQ}" || {
+	echo "${d} ${INT} set channel ${CHAN}"
+	iw dev "${INT}" set channel ${CHAN}
 }
