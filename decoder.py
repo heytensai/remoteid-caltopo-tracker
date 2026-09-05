@@ -21,6 +21,7 @@ from scapy.all import rdpcap, sniff
 
 from uas_remoteid.common.wifi import parse_dot11
 from database import RemoteIDDatabase
+from gps import GpsClient
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,19 @@ class ApiClientConfig:
         self.batch_size = int(config_dict.get("batch_size", 200))
 
 
+@dataclass
+class GpsConfig:
+    """Configuration for the gpsd daemon connection"""
+
+    host: str = "127.0.0.1"
+    port: int = 2947
+
+    def __init__(self, config_dict: dict):
+        """Initialize from a configuration dictionary"""
+        self.host = config_dict.get("host", "127.0.0.1")
+        self.port = int(config_dict.get("port", 2947))
+
+
 class ApiClientThread(threading.Thread):
     """Background thread that periodically sends data to a remote API server.
 
@@ -62,11 +76,13 @@ class ApiClientThread(threading.Thread):
         config: ApiClientConfig,
         database: RemoteIDDatabase,
         stop_event: threading.Event,
+        gps_reader: Optional[GpsClient] = None,
     ):
         super().__init__(name=f"ApiClient-{config.url}", daemon=True)
         self.config = config
         self.database = database
         self.stop_event = stop_event
+        self.gps_reader = gps_reader
         self.last_timestamp: Optional[datetime] = None
         self.headers = {
             "Authorization": f"Bearer {config.api_key}",
@@ -139,7 +155,9 @@ class ApiClientThread(threading.Thread):
 
             # Always advance last_timestamp if server provides one
             if result.get("last_timestamp"):
-                self.last_timestamp = datetime.fromisoformat(result["last_timestamp"].replace("Z", "+00:00"))
+                self.last_timestamp = datetime.fromisoformat(
+                    result["last_timestamp"].replace("Z", "+00:00")
+                )
 
             return True
 
@@ -154,14 +172,31 @@ class ApiClientThread(threading.Thread):
     def _send_ping(self) -> bool:
         """Send a lightweight heartbeat to the remote server.
 
+        When a GPS receiver is active and has a fix, the collector's
+        position is appended as lat/lon query parameters.
+
         Returns:
             True if successful, False otherwise
         """
+        params = {}
+        if self.gps_reader is not None:
+            fix = self.gps_reader.fix
+            if fix is not None:
+                params = {"lat": fix.lat, "lon": fix.lon}
         try:
             url = f"{self.config.url}/api/submit/ping"
-            response = requests.get(url, headers=self.headers, timeout=30)
+            response = requests.get(
+                url, params=params, headers=self.headers, timeout=30
+            )
             response.raise_for_status()
-            logger.debug("API client for %s: ping successful", self.config.url)
+            if params:
+                logger.debug(
+                    "API client for %s: ping successful at %s",
+                    self.config.url,
+                    fix,
+                )
+            else:
+                logger.debug("API client for %s: ping successful", self.config.url)
             return True
         except RequestException as e:
             logger.warning(
@@ -283,6 +318,15 @@ class ServerConfig:  # pylint: disable=too-many-instance-attributes
                 len(self.api_clients),
                 ", ".join(c.url for c in self.api_clients),
             )
+
+        # Parse optional GPS receiver configuration
+        self.gps = None
+        gps_data = yaml_data.get("gps")
+        if gps_data:
+            try:
+                self.gps = GpsConfig(gps_data)
+            except ValueError as e:
+                logger.warning("Skipping invalid GPS config: %s", e)
 
 
 @dataclass
@@ -580,7 +624,7 @@ class Server:  # pylint: disable=too-many-instance-attributes
             self.stats_timer.cancel()
 
     def stop_api_clients(self):
-        """Stop all API client threads"""
+        """Stop API client threads and the GPS client"""
         if self.api_client_stop_event:
             logger.info("Stopping API client threads...")
             self.api_client_stop_event.set()
@@ -588,8 +632,14 @@ class Server:  # pylint: disable=too-many-instance-attributes
                 thread.join(timeout=5.0)
                 if thread.is_alive():
                     logger.warning(
-                        "API client thread %s did not stop gracefully", thread.name
+                        "API client thread %s did not stop gracefully",
+                        thread.name,
                     )
+        if self.gps_reader is not None:
+            logger.info("Stopping GPS client...")
+            self.gps_reader.join(timeout=5.0)
+            if self.gps_reader.is_alive():
+                logger.warning("GPS client did not stop gracefully")
 
     def __init__(self, config: ServerConfig, noop: bool = False):
         self.config = config
@@ -605,16 +655,46 @@ class Server:  # pylint: disable=too-many-instance-attributes
         )
 
         # Initialize database if configured
+        self.database = None
         if self.config.database:
             self.database = RemoteIDDatabase(self.config.database)
 
+        # Start the GPS client when configured AND a database is enabled.
+        # The collector position feeds the API client ping; without a
+        # database we only report to CalTopo, which has no use for the
+        # receiver's location. gpsd must be running; if it is unreachable the
+        # client logs the outcome (port open/closed) and disables itself.
+        self.api_client_stop_event = threading.Event()
+        self.gps_reader = None
+        if self.config.gps is None:
+            logger.info("GPS disabled: no 'gps' section in config")
+        elif not self.database:
+            logger.warning(
+                "GPS configured but no database enabled. "
+                "GPS position reporting disabled."
+            )
+        else:
+            self.gps_reader = GpsClient(
+                host=self.config.gps.host,
+                port=self.config.gps.port,
+                stop_event=self.api_client_stop_event,
+            )
+            self.gps_reader.start()
+            logger.info(
+                "GPS enabled: collector position from gpsd at %s:%d",
+                self.config.gps.host,
+                self.config.gps.port,
+            )
+
         # Start API client threads if configured and database is available
         self.api_client_threads = []
-        self.api_client_stop_event = threading.Event()
         if self.config.api_clients and self.database:
             for client_config in self.config.api_clients:
                 thread = ApiClientThread(
-                    client_config, self.database, self.api_client_stop_event
+                    client_config,
+                    self.database,
+                    self.api_client_stop_event,
+                    gps_reader=self.gps_reader,
                 )
                 thread.start()
                 self.api_client_threads.append(thread)

@@ -29,3 +29,13 @@ ignore:
 #    api_key: "backup-api-key"
 #    interval: 300
 #    batch_size: 500
+
+# Optional: report the collector's own position from a local gpsd daemon.
+# gpsd owns the USB receiver, so any number of decoder instances can share
+# it. Requires both the database option and api_clients to be enabled; the
+# position is sent as lat/lon on each collector ping (/api/submit/ping) and
+# the collector identity comes from the bearer API key. If gpsd is not
+# running, GPS support is simply disabled with a warning.
+#gps:
+#  host: 127.0.0.1   # gpsd address (default: 127.0.0.1)
+#  port: 2947        # gpsd TCP port (default: 2947)
