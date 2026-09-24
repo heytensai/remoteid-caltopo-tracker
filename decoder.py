@@ -1,5 +1,5 @@
-""" Read UAS Remote ID packets from a network interface or a PCAP file and
-    relay them to a CalTopo map
+"""Read UAS Remote ID packets from a network interface or a PCAP file and
+relay them to a CalTopo map
 """
 
 import argparse
@@ -24,6 +24,38 @@ from database import RemoteIDDatabase
 from gps import GpsClient
 
 logger = logging.getLogger(__name__)
+
+# Canonical frequency bands with their accepted aliases. Canonical values are
+# what we send upstream, matching the server's /api/submit and ping APIs.
+_FREQUENCY_ALIASES = {
+    "2.4ghz": {"2.4", "2400", "2400mhz"},
+    "5.8ghz": {"5.8", "5800", "5800mhz"},
+    "ble": {"bluetooth", "bt"},
+}
+_CANONICAL_FREQUENCIES = frozenset(_FREQUENCY_ALIASES)
+
+
+def normalize_frequency(value) -> Optional[str]:
+    """Map an alias to its canonical frequency band, or None if invalid.
+
+    Canonical bands are "2.4ghz", "5.8ghz", and "ble". Aliases are accepted
+    case-insensitively, including unquoted YAML numbers (e.g. ``2400``, ``5.8``).
+    Returns None for missing, non-string, or unrecognized values so callers can
+    treat it as "not configured".
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        value = str(int(value)) if value.is_integer() else str(value)
+    if not isinstance(value, str):
+        return None
+    norm = value.strip().lower()
+    if norm in _CANONICAL_FREQUENCIES:
+        return norm
+    for canonical, aliases in _FREQUENCY_ALIASES.items():
+        if norm in aliases:
+            return canonical
+    return None
 
 
 @dataclass
@@ -77,12 +109,14 @@ class ApiClientThread(threading.Thread):
         database: RemoteIDDatabase,
         stop_event: threading.Event,
         gps_reader: Optional[GpsClient] = None,
+        frequency: Optional[str] = None,
     ):
         super().__init__(name=f"ApiClient-{config.url}", daemon=True)
         self.config = config
         self.database = database
         self.stop_event = stop_event
         self.gps_reader = gps_reader
+        self.frequency = frequency
         self.last_timestamp: Optional[datetime] = None
         self.headers = {
             "Authorization": f"Bearer {config.api_key}",
@@ -99,7 +133,9 @@ class ApiClientThread(threading.Thread):
             data = response.json()
 
             if data.get("last_timestamp"):
-                ts = datetime.fromisoformat(data["last_timestamp"].replace("Z", "+00:00"))
+                ts = datetime.fromisoformat(
+                    data["last_timestamp"].replace("Z", "+00:00")
+                )
                 logger.info(
                     "API client for %s: remote last timestamp is %s",
                     self.config.url,
@@ -173,7 +209,9 @@ class ApiClientThread(threading.Thread):
         """Send a lightweight heartbeat to the remote server.
 
         When a GPS receiver is active and has a fix, the collector's
-        position is appended as lat/lon query parameters.
+        position is appended as lat/lon query parameters. When a frequency
+        band is configured, it is reported as the freqs parameter so the
+        server knows which bands this collector monitors.
 
         Returns:
             True if successful, False otherwise
@@ -183,6 +221,8 @@ class ApiClientThread(threading.Thread):
             fix = self.gps_reader.fix
             if fix is not None:
                 params = {"lat": fix.lat, "lon": fix.lon}
+        if self.frequency is not None:
+            params["freqs"] = self.frequency
         try:
             url = f"{self.config.url}/api/submit/ping"
             response = requests.get(
@@ -191,17 +231,15 @@ class ApiClientThread(threading.Thread):
             response.raise_for_status()
             if params:
                 logger.debug(
-                    "API client for %s: ping successful at %s",
+                    "API client for %s: ping successful (params=%s)",
                     self.config.url,
-                    fix,
+                    params,
                 )
             else:
                 logger.debug("API client for %s: ping successful", self.config.url)
             return True
         except RequestException as e:
-            logger.warning(
-                "API client for %s: ping failed: %s", self.config.url, e
-            )
+            logger.warning("API client for %s: ping failed: %s", self.config.url, e)
             return False
 
     def _sync_once(self) -> None:
@@ -235,10 +273,12 @@ class ApiClientThread(threading.Thread):
     def run(self) -> None:
         """Main thread loop"""
         logger.info(
-            "API client thread started for %s (interval=%ds, batch_size=%d)",
+            "API client thread started for %s (interval=%ds, batch_size=%d, "
+            "frequency=%s)",
             self.config.url,
             self.config.interval,
             self.config.batch_size,
+            self.frequency if self.frequency is not None else "not set",
         )
 
         while not self.stop_event.is_set():
@@ -275,6 +315,7 @@ class ServerConfig:  # pylint: disable=too-many-instance-attributes
     logging_level: int
     bpf_filter: str
     database: str = None
+    frequency: Optional[str] = None
 
     def __init__(self, yaml_file: str):
         with open(yaml_file, encoding="utf-8") as fh:
@@ -302,6 +343,21 @@ class ServerConfig:  # pylint: disable=too-many-instance-attributes
         self.alias_map = yaml_data.get("alias", {})
         self.bpf_filter = yaml_data.get("filter", "type mgt")
         self.database = yaml_data.get("database")
+
+        # Normalize the node's receive frequency band. Unknown values log a
+        # warning and disable frequency reporting rather than refusing to
+        # start, mirroring how an unreachable gpsd disables GPS support.
+        self.frequency = None
+        raw_frequency = yaml_data.get("frequency")
+        if raw_frequency:
+            self.frequency = normalize_frequency(raw_frequency)
+            if self.frequency is None:
+                logger.warning(
+                    "Invalid 'frequency' config value %r; frequency reporting disabled",
+                    raw_frequency,
+                )
+            else:
+                logger.info("Collector frequency configured: %s", self.frequency)
 
         # Parse API client configurations
         self.api_clients: list[ApiClientConfig] = []
@@ -465,6 +521,7 @@ class Server:  # pylint: disable=too-many-instance-attributes
                     float(uas.operator_lon) if uas.operator_lon is not None else None
                 ),
                 session_id=uas.session_id,
+                frequency=self.config.frequency,
             )
             if self.stats:
                 self.stats.recorded += 1
@@ -473,7 +530,9 @@ class Server:  # pylint: disable=too-many-instance-attributes
         display_id = self.config.alias_map.get(uas.id, uas.id)
 
         if self.noop:
-            logger.info("TX %s %s %s h=%s (NOOP)", display_id, uas.lon, uas.lat, uas.height)
+            logger.info(
+                "TX %s %s %s h=%s (NOOP)", display_id, uas.lon, uas.lat, uas.height
+            )
             return
         logger.info("TX %s %s %s h=%s", display_id, uas.lon, uas.lat, uas.height)
 
@@ -695,6 +754,7 @@ class Server:  # pylint: disable=too-many-instance-attributes
                     self.database,
                     self.api_client_stop_event,
                     gps_reader=self.gps_reader,
+                    frequency=self.config.frequency,
                 )
                 thread.start()
                 self.api_client_threads.append(thread)

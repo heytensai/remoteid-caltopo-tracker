@@ -1,5 +1,4 @@
-""" SQLite database storage for Remote ID data
-"""
+"""SQLite database storage for Remote ID data"""
 
 import sqlite3
 import logging
@@ -44,7 +43,9 @@ class RemoteIDDatabase:
         """Initialize the database schema"""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES) as conn:
+        with sqlite3.connect(
+            self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+        ) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS remoteid(
@@ -60,7 +61,8 @@ class RemoteIDDatabase:
                     height_type INTEGER,
                     operator_id TEXT,
                     operator_latitude REAL,
-                    operator_longitude REAL
+                    operator_longitude REAL,
+                    frequency TEXT
                 )
             """
             )
@@ -83,6 +85,11 @@ class RemoteIDDatabase:
                 conn.execute("ALTER TABLE remoteid ADD COLUMN height_type INTEGER")
                 conn.commit()
                 logger.info("Added height_type column to existing database")
+
+            if "frequency" not in columns:
+                conn.execute("ALTER TABLE remoteid ADD COLUMN frequency TEXT")
+                conn.commit()
+                logger.info("Added frequency column to existing database")
 
             # Migrate: Convert naive timestamps to UTC
             raw_conn = sqlite3.connect(self.db_path)
@@ -123,16 +130,20 @@ class RemoteIDDatabase:
         operator_latitude: float = None,
         operator_longitude: float = None,
         session_id: str = None,
+        frequency: str = None,
     ):
         """Store a Remote ID record in the database"""
         try:
-            with sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES) as conn:
+            with sqlite3.connect(
+                self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+            ) as conn:
                 conn.execute(
                     """INSERT INTO remoteid
                        (timestamp, mac_address, uas_id, session_id, latitude, longitude, altitude,
                         height, height_type,
-                        operator_id, operator_latitude, operator_longitude)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        operator_id, operator_latitude, operator_longitude,
+                        frequency)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         timestamp,
                         mac_address,
@@ -146,6 +157,7 @@ class RemoteIDDatabase:
                         operator_id,
                         operator_latitude,
                         operator_longitude,
+                        frequency,
                     ),
                 )
                 conn.commit()
@@ -166,13 +178,16 @@ class RemoteIDDatabase:
             List of event dictionaries matching the API format
         """
         try:
-            with sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES) as conn:
+            with sqlite3.connect(
+                self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+            ) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     """SELECT timestamp, mac_address, uas_id, session_id,
                               latitude, longitude, altitude,
                               height, height_type,
-                              operator_id, operator_latitude, operator_longitude
+                              operator_id, operator_latitude, operator_longitude,
+                              frequency
                        FROM remoteid
                        WHERE timestamp > ?
                        ORDER BY timestamp ASC
@@ -199,6 +214,7 @@ class RemoteIDDatabase:
                     "operator_id": row["operator_id"],
                     "operator_latitude": row["operator_latitude"],
                     "operator_longitude": row["operator_longitude"],
+                    "frequency": row["frequency"],
                 }
                 # Remove None values to keep payload clean
                 event = {k: v for k, v in event.items() if v is not None}
@@ -217,7 +233,9 @@ class RemoteIDDatabase:
             The most recent timestamp, or None if no records exist
         """
         try:
-            with sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES) as conn:
+            with sqlite3.connect(
+                self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+            ) as conn:
                 cursor = conn.execute("SELECT MAX(timestamp) FROM remoteid")
                 result = cursor.fetchone()
                 max_ts = result[0] if result else None

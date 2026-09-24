@@ -90,6 +90,11 @@ alias:
 # If not specified, no database will be used
 database: '/path/to/remoteid.db'
 
+# Optional: Receive frequency band for the collector's single capture interface.
+# Reported to remote servers (submit 'frequency' field and ping 'freqs' param).
+# Accepts "2.4ghz", "5.8ghz", "ble" plus aliases (e.g. "2.4", "5800", "bt").
+#frequency: '2.4ghz'
+
 # Optional: Configure remote API clients to sync data to external servers
 # Requires the 'database' option to be enabled
 api_clients:
@@ -164,6 +169,7 @@ api_clients:
 | operator_id        | TEXT     | Operator registration ID                   |
 | operator_latitude  | REAL     | Operator (pilot) latitude                  |
 | operator_longitude | REAL     | Operator (pilot) longitude                 |
+| frequency          | TEXT     | Receive band (e.g. `2.4ghz`, `5.8ghz`, `ble`); NULL for legacy records |
 
 **Querying the database:**
 
