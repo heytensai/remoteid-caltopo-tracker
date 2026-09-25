@@ -1,0 +1,3 @@
+#!/bin/bash
+
+rsync -va --inplace --exclude=__pycache__ default_config.yaml set-wifi-interface.sh uas_remoteid requirements.txt remoteid-caltopo-tracker.service *.py "$1"
