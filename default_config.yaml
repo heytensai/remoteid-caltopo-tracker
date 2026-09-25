@@ -14,9 +14,9 @@ filter: "type mgt subtype beacon or type mgt subtype action"
 # but their records are submitted without a band (server records 'unknown').
 #
 # Accepted bands: "2.4ghz", "5.8ghz", "ble" (plus aliases like "2.4", "5800").
-#interfaces:
-#  - iface: wlan1
-#    frequency: '2.4ghz'
+interfaces:
+  - iface: wlan1
+    frequency: '2.4ghz'
 #  - iface: wlan2
 #    frequency: '5.8ghz'
 ignore:
