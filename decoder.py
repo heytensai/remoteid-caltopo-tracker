@@ -46,7 +46,7 @@ def normalize_frequency(value) -> Optional[str]:
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
-        value = str(int(value)) if value.is_integer() else str(value)
+        value = str(int(value)) if float(value).is_integer() else str(value)
     if not isinstance(value, str):
         return None
     norm = value.strip().lower()
@@ -107,7 +107,7 @@ class InterfaceConfig:
         self.iface = str(config_dict["iface"])
         self.frequency = None
         raw_frequency = config_dict.get("frequency")
-        if raw_frequency:
+        if raw_frequency is not None:
             self.frequency = normalize_frequency(raw_frequency)
             if self.frequency is None:
                 logger.warning(
@@ -864,7 +864,7 @@ if __name__ == "__main__":
 
     elif args.interface:
         if conf.interfaces:
-            raise SystemExit(
+            argparser.error(
                 "--interface conflicts with the 'interfaces' config section; "
                 "use one or the other"
             )
