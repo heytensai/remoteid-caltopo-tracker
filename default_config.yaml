@@ -7,10 +7,18 @@ caltopo_url: 'https://caltopo.com/api/v1/position/report/<your_key_here>'
 # the decoder will exit — make sure the interface is in monitor mode.
 filter: "type mgt subtype beacon or type mgt subtype action"
 #database: 'archive.db'
-# Node receive frequency band. Describes the single capture interface and is
-# reported to the remote API (submit 'frequency' + ping 'freqs'). Accepts
-# "2.4ghz", "5.8ghz", "ble" (plus aliases like "2.4", "5800", "bt").
-#frequency: '2.4ghz'
+# Receive frequency band(s) for the capture interfaces. One entry per capture
+# interface; each may carry its own 'frequency' band. The same drone heard on
+# two bands keeps a record per band, and the ping reports the combined set
+# (e.g. freqs=2.4ghz,5.8ghz). Interfaces without a 'frequency' are monitored
+# but their records are submitted without a band (server records 'unknown').
+#
+# Accepted bands: "2.4ghz", "5.8ghz", "ble" (plus aliases like "2.4", "5800").
+#interfaces:
+#  - iface: wlan1
+#    frequency: '2.4ghz'
+#  - iface: wlan2
+#    frequency: '5.8ghz'
 ignore:
   - "<your_uas_id_here>"
 
