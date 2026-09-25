@@ -1,5 +1,5 @@
-""" Read UAS Remote ID packets from a network interface or a PCAP file and
-    relay them to a CalTopo map
+"""Read UAS Remote ID packets from a network interface or a PCAP file and
+relay them to a CalTopo map
 """
 
 import argparse
@@ -17,13 +17,45 @@ import yaml
 import requests
 from requests.exceptions import RequestException
 from scapy.layers.dot11 import Dot11
-from scapy.all import rdpcap, sniff
+from scapy.all import AsyncSniffer, rdpcap, sniff
 
 from uas_remoteid.common.wifi import parse_dot11
 from database import RemoteIDDatabase
 from gps import GpsClient
 
 logger = logging.getLogger(__name__)
+
+# Canonical frequency bands with their accepted aliases. Canonical values are
+# what we send upstream, matching the server's /api/submit and ping APIs.
+_FREQUENCY_ALIASES = {
+    "2.4ghz": {"2.4", "2400", "2400mhz"},
+    "5.8ghz": {"5.8", "5800", "5800mhz"},
+    "ble": {"bluetooth", "bt"},
+}
+_CANONICAL_FREQUENCIES = frozenset(_FREQUENCY_ALIASES)
+
+
+def normalize_frequency(value) -> Optional[str]:
+    """Map an alias to its canonical frequency band, or None if invalid.
+
+    Canonical bands are "2.4ghz", "5.8ghz", and "ble". Aliases are accepted
+    case-insensitively, including unquoted YAML numbers (e.g. ``2400``, ``5.8``).
+    Returns None for missing, non-string, or unrecognized values so callers can
+    treat it as "not configured".
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        value = str(int(value)) if float(value).is_integer() else str(value)
+    if not isinstance(value, str):
+        return None
+    norm = value.strip().lower()
+    if norm in _CANONICAL_FREQUENCIES:
+        return norm
+    for canonical, aliases in _FREQUENCY_ALIASES.items():
+        if norm in aliases:
+            return canonical
+    return None
 
 
 @dataclass
@@ -61,7 +93,32 @@ class GpsConfig:
         self.port = int(config_dict.get("port", 2947))
 
 
-class ApiClientThread(threading.Thread):
+@dataclass
+class InterfaceConfig:
+    """Configuration for one capture interface"""
+
+    iface: str
+    frequency: Optional[str] = None
+
+    def __init__(self, config_dict: dict):
+        """Initialize from a configuration dictionary"""
+        if "iface" not in config_dict or not config_dict["iface"]:
+            raise ValueError("Interface config missing required field: 'iface'")
+        self.iface = str(config_dict["iface"])
+        self.frequency = None
+        raw_frequency = config_dict.get("frequency")
+        if raw_frequency is not None:
+            self.frequency = normalize_frequency(raw_frequency)
+            if self.frequency is None:
+                logger.warning(
+                    "Invalid 'frequency' value %r for interface %r; "
+                    "frequency reporting disabled for that interface",
+                    raw_frequency,
+                    self.iface,
+                )
+
+
+class ApiClientThread(threading.Thread):  # pylint: disable=too-many-instance-attributes
     """Background thread that periodically sends data to a remote API server.
 
     This thread:
@@ -71,18 +128,21 @@ class ApiClientThread(threading.Thread):
     - Retries immediately on any error (no backoff)
     """
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
         config: ApiClientConfig,
         database: RemoteIDDatabase,
         stop_event: threading.Event,
         gps_reader: Optional[GpsClient] = None,
+        freqs: tuple[str, ...] = (),
     ):
         super().__init__(name=f"ApiClient-{config.url}", daemon=True)
         self.config = config
         self.database = database
         self.stop_event = stop_event
         self.gps_reader = gps_reader
+        self.freqs = freqs
         self.last_timestamp: Optional[datetime] = None
         self.headers = {
             "Authorization": f"Bearer {config.api_key}",
@@ -99,7 +159,9 @@ class ApiClientThread(threading.Thread):
             data = response.json()
 
             if data.get("last_timestamp"):
-                ts = datetime.fromisoformat(data["last_timestamp"].replace("Z", "+00:00"))
+                ts = datetime.fromisoformat(
+                    data["last_timestamp"].replace("Z", "+00:00")
+                )
                 logger.info(
                     "API client for %s: remote last timestamp is %s",
                     self.config.url,
@@ -173,7 +235,9 @@ class ApiClientThread(threading.Thread):
         """Send a lightweight heartbeat to the remote server.
 
         When a GPS receiver is active and has a fix, the collector's
-        position is appended as lat/lon query parameters.
+        position is appended as lat/lon query parameters. When frequency
+        bands are configured, they are reported as the comma-separated freqs
+        parameter so the server knows which bands this collector monitors.
 
         Returns:
             True if successful, False otherwise
@@ -183,6 +247,8 @@ class ApiClientThread(threading.Thread):
             fix = self.gps_reader.fix
             if fix is not None:
                 params = {"lat": fix.lat, "lon": fix.lon}
+        if self.freqs:
+            params["freqs"] = ",".join(self.freqs)
         try:
             url = f"{self.config.url}/api/submit/ping"
             response = requests.get(
@@ -191,17 +257,15 @@ class ApiClientThread(threading.Thread):
             response.raise_for_status()
             if params:
                 logger.debug(
-                    "API client for %s: ping successful at %s",
+                    "API client for %s: ping successful (params=%s)",
                     self.config.url,
-                    fix,
+                    params,
                 )
             else:
                 logger.debug("API client for %s: ping successful", self.config.url)
             return True
         except RequestException as e:
-            logger.warning(
-                "API client for %s: ping failed: %s", self.config.url, e
-            )
+            logger.warning("API client for %s: ping failed: %s", self.config.url, e)
             return False
 
     def _sync_once(self) -> None:
@@ -263,7 +327,7 @@ class ApiClientThread(threading.Thread):
 
 
 @dataclass
-class ServerConfig:  # pylint: disable=too-many-instance-attributes
+class ServerConfig:  # pylint: disable=too-many-instance-attributes,too-many-branches,too-many-statements
     """Read configuration from a YAML file"""
 
     rate_limit: int
@@ -302,6 +366,15 @@ class ServerConfig:  # pylint: disable=too-many-instance-attributes
         self.alias_map = yaml_data.get("alias", {})
         self.bpf_filter = yaml_data.get("filter", "type mgt")
         self.database = yaml_data.get("database")
+
+        # Parse per-interface capture configuration
+        self.interfaces: list[InterfaceConfig] = []
+        interfaces_data = yaml_data.get("interfaces", [])
+        for interface_config in interfaces_data:
+            try:
+                self.interfaces.append(InterfaceConfig(interface_config))
+            except ValueError as e:
+                logger.warning("Skipping invalid interface config: %s", e)
 
         # Parse API client configurations
         self.api_clients: list[ApiClientConfig] = []
@@ -345,6 +418,7 @@ class UAS:  # pylint: disable=too-many-instance-attributes
     operator_id: str = None
     operator_lat: float = None
     operator_lon: float = None
+    frequency: str = None
 
     def valid(self) -> bool:
         """Check whether all fields have been populated. This is necessary
@@ -423,7 +497,7 @@ class Server:  # pylint: disable=too-many-instance-attributes
     """Handles UAS Remote ID packet processing and CalTopo reporting."""
 
     url_prefix: str
-    last_update: dict[str, float]
+    last_update: dict[tuple[str, str], float]
     config: ServerConfig
     noop: bool = False
     database: RemoteIDDatabase = None
@@ -433,10 +507,17 @@ class Server:  # pylint: disable=too-many-instance-attributes
     api_client_stop_event: threading.Event = None
 
     def report(self, uas):
-        """Upload data to CalTopo and store in database"""
+        """Upload data to CalTopo and store in database.
 
+        Rate limiting is keyed per (uas_id, frequency band) so that the same
+        drone heard on multiple bands (e.g. 2.4 GHz and 5.8 GHz) keeps a
+        record per band while still throttling duplicate captures on one band.
+        """
+
+        band = uas.frequency
+        rate_key = (uas.id, band or "")
         current_time = time.time()
-        last_update = self.last_update.get(uas.id, 0)
+        last_update = self.last_update.get(rate_key, 0)
         delta = current_time - last_update
         if delta < self.config.rate_limit:
             logger.debug("Rate limited %s", uas.id)
@@ -444,7 +525,7 @@ class Server:  # pylint: disable=too-many-instance-attributes
                 self.stats.rate_limited += 1
             return
 
-        self.last_update[uas.id] = current_time
+        self.last_update[rate_key] = current_time
 
         # Store in database if configured
         if self.database:
@@ -465,6 +546,7 @@ class Server:  # pylint: disable=too-many-instance-attributes
                     float(uas.operator_lon) if uas.operator_lon is not None else None
                 ),
                 session_id=uas.session_id,
+                frequency=band,
             )
             if self.stats:
                 self.stats.recorded += 1
@@ -473,7 +555,9 @@ class Server:  # pylint: disable=too-many-instance-attributes
         display_id = self.config.alias_map.get(uas.id, uas.id)
 
         if self.noop:
-            logger.info("TX %s %s %s h=%s (NOOP)", display_id, uas.lon, uas.lat, uas.height)
+            logger.info(
+                "TX %s %s %s h=%s (NOOP)", display_id, uas.lon, uas.lat, uas.height
+            )
             return
         logger.info("TX %s %s %s h=%s", display_id, uas.lon, uas.lat, uas.height)
 
@@ -488,13 +572,23 @@ class Server:  # pylint: disable=too-many-instance-attributes
             if self.stats:
                 self.stats.errors += 1
 
-    def on_receive(self, packet):
-        """Event handler for sniffed packets"""
+    def on_receive(self, packet, frequency: Optional[str] = None):
+        """Event handler for sniffed packets.
+
+        Args:
+            packet: A decoded 802.11 packet.
+            frequency: The receive band this packet was heard on, resolved
+                from the capturing interface. When None (e.g. pcap replay or
+                an interface without a configured band), the record is stored
+                and submitted without a frequency so the server records
+                ``unknown`` for it.
+        """
 
         if not packet.haslayer(Dot11):
             return
 
         uas = self.decode_packet(packet)
+        uas.frequency = frequency
 
         if not uas.valid():
             return
@@ -521,6 +615,17 @@ class Server:  # pylint: disable=too-many-instance-attributes
             return
 
         self.report(uas)
+
+    def frequency_for(self, packet) -> Optional[str]:
+        """Resolve the receive band for a captured packet.
+
+        Uses scapy's ``sniffed_on`` attribute to find the capture interface
+        and return its configured band. Returns None when the packet lacks
+        interface attribution (e.g. pcap replay) or the interface has no
+        configured band, so the record is submitted without a frequency.
+        """
+        iface = getattr(packet, "sniffed_on", None)
+        return self._iface_freq.get(iface)
 
     # NAN service ID for Remote ID (6 bytes = unique, no false positives)
     _NAN_SERVICE_ID = b"\x88\x69\x19\x9d\x92\x09"
@@ -654,6 +759,17 @@ class Server:  # pylint: disable=too-many-instance-attributes
             style="{",
         )
 
+        # Map configured capture interfaces to their bands for packet
+        # attribution via scapy's sniffed_on attribute.
+        self._iface_freq: dict[str, Optional[str]] = {
+            ic.iface: ic.frequency for ic in self.config.interfaces
+        }
+        # The set of bands the node monitors, reported on each ping. Sorted
+        # for deterministic output. Empty when no interfaces have a band.
+        self.freqs: tuple[str, ...] = tuple(
+            sorted({ic.frequency for ic in self.config.interfaces if ic.frequency})
+        )
+
         # Initialize database if configured
         self.database = None
         if self.config.database:
@@ -695,6 +811,7 @@ class Server:  # pylint: disable=too-many-instance-attributes
                     self.database,
                     self.api_client_stop_event,
                     gps_reader=self.gps_reader,
+                    freqs=self.freqs,
                 )
                 thread.start()
                 self.api_client_threads.append(thread)
@@ -717,10 +834,14 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
 
     argparser = argparse.ArgumentParser()
-    group = argparser.add_mutually_exclusive_group(required=True)
+    group = argparser.add_mutually_exclusive_group()
     _ = group.add_argument("--pcap", help="pcap file to read packets from")
     _ = group.add_argument(
-        "--interface", help="name of wireless interface to sniff from"
+        "--interface",
+        help=(
+            "wireless interface to sniff from (legacy single-interface mode; "
+            "configure 'interfaces' in the yaml for multiple interfaces)"
+        ),
     )
     _ = argparser.add_argument(
         "--config", default="config.yaml", help="yaml configuration file"
@@ -742,6 +863,11 @@ if __name__ == "__main__":
         serv.print_stats()
 
     elif args.interface:
+        if conf.interfaces:
+            argparser.error(
+                "--interface conflicts with the 'interfaces' config section; "
+                "use one or the other"
+            )
         serv.start_stats_timer()
         try:
             logger.info("Listening for packets %s", args.interface)
@@ -757,3 +883,35 @@ if __name__ == "__main__":
         finally:
             serv.stop_stats_timer()
             serv.stop_api_clients()
+
+    elif conf.interfaces:
+        ifaces = [ic.iface for ic in conf.interfaces]
+        serv.start_stats_timer()
+        for ic in conf.interfaces:
+            logger.info(
+                "Capture interface %s (frequency=%s)",
+                ic.iface,
+                ic.frequency or "none",
+            )
+        sniffer = AsyncSniffer(
+            iface=ifaces,
+            filter=conf.bpf_filter,
+            prn=lambda p: serv.on_receive(p, frequency=serv.frequency_for(p)),
+            store=0,
+        )
+        try:
+            sniffer.start()
+            while sniffer.running:
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            sniffer.stop()
+            sniffer.join(timeout=5.0)
+            serv.stop_stats_timer()
+            serv.stop_api_clients()
+
+    else:
+        argparser.error(
+            "must specify --pcap, --interface, or configure 'interfaces' in the yaml"
+        )

@@ -10,7 +10,7 @@ Remote ID is a broadcast system that transmits identification and location infor
 
 ## Features
 
-- **Live Packet Capture**: Capture Remote ID broadcasts from a WiFi interface in monitor mode
+- **Live Packet Capture**: Capture Remote ID broadcasts from one or more WiFi interfaces in monitor mode, each with its own frequency band
 - **PCAP Replay**: Replay and analyze previously captured Remote ID packets from PCAP files
 - **CalTopo Integration**: Send position updates directly to CalTopo maps
 - **SQLite Database Storage**: Optionally store all Remote ID data locally for analysis and record-keeping
@@ -90,6 +90,18 @@ alias:
 # If not specified, no database will be used
 database: '/path/to/remoteid.db'
 
+# Optional: Receive frequency bands. One entry per capture interface, each may
+# carry its own 'frequency'. The same drone heard on two bands keeps one record
+# per band, and the ping reports the combined set. Interfaces without a
+# 'frequency' are monitored but their records are submitted untagged (server
+# records 'unknown'). pcap replay and plain --interface capture have no band.
+# Accepted bands: "2.4ghz", "5.8ghz", "ble" plus aliases (e.g. "2.4", "5800").
+#interfaces:
+#  - iface: wlan1
+#    frequency: '2.4ghz'
+#  - iface: wlan2
+#    frequency: '5.8ghz'
+
 # Optional: Configure remote API clients to sync data to external servers
 # Requires the 'database' option to be enabled
 api_clients:
@@ -164,6 +176,7 @@ api_clients:
 | operator_id        | TEXT     | Operator registration ID                   |
 | operator_latitude  | REAL     | Operator (pilot) latitude                  |
 | operator_longitude | REAL     | Operator (pilot) longitude                 |
+| frequency          | TEXT     | Receive band (e.g. `2.4ghz`, `5.8ghz`, `ble`); NULL for legacy records |
 
 **Querying the database:**
 
@@ -244,11 +257,30 @@ ip link show
 
 ### Live Capture
 
-Capture Remote ID broadcasts in real-time:
+Capture Remote ID broadcasts in real-time from a single interface (legacy):
 
 ```bash
 sudo python decoder.py --interface wifi0 --config config.yaml
 ```
+
+Or from multiple interfaces by configuring the `interfaces` section in your
+YAML (one `iface` per capture interface, each with an optional `frequency`):
+
+```yaml
+interfaces:
+  - iface: wlan1
+    frequency: '2.4ghz'
+  - iface: wlan2
+    frequency: '5.8ghz'
+```
+
+```bash
+sudo python decoder.py --config config.yaml
+```
+
+The same drone heard on two bands keeps one record per band (the server keys on
+`uas_id + source + frequency + timestamp`), and the collector ping reports the
+combined set of bands (e.g. `freqs=2.4ghz,5.8ghz`).
 
 ### Replay from PCAP
 
@@ -261,14 +293,19 @@ python decoder.py --pcap capture.pcap --config config.yaml
 ### Command-Line Options
 
 ```
-usage: decoder.py [-h] (--pcap PCAP | --interface INTERFACE) --config CONFIG
+usage: decoder.py [-h] [--pcap PCAP | --interface INTERFACE] --config CONFIG
 
 options:
   -h, --help            show this help message and exit
   --pcap PCAP           Path to PCAP file for replay
-  --interface INTERFACE WiFi interface name (must be in monitor mode)
+  --interface INTERFACE WiFi interface name (must be in monitor mode).
+                        Legacy single-interface mode; configure 'interfaces'
+                        in the YAML to capture from multiple interfaces.
   --config CONFIG       Path to configuration YAML file
 ```
+
+If neither `--pcap` nor `--interface` is given, the `interfaces` section in the
+configuration file is used for live capture.
 
 ## Logging
 
